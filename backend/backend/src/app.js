@@ -13,7 +13,12 @@ const authRoutes         = require('./routes/auth.routes');
 
 const app = express();
 
-// Allow the local Next.js frontend, localhost, and all Chrome extensions.
+// Allow deployed frontend(s), localhost, and all Chrome extensions.
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -21,7 +26,8 @@ app.use(
         !origin ||
         origin.startsWith('chrome-extension://') ||
         origin.startsWith('http://localhost') ||
-        origin.startsWith('http://127.0.0.1')
+        origin.startsWith('http://127.0.0.1') ||
+        allowedOrigins.includes(origin)
       ) {
         callback(null, true);
       } else {

@@ -18,7 +18,10 @@ const errorHandler = (err, req, res, next) => {
 
   logger.error(err.stack);
 
-  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  const isCorsError = err.message && err.message.includes('CORS');
+  const statusCode = isCorsError
+    ? 403
+    : (res.statusCode === 200 ? 500 : res.statusCode);
   res.status(statusCode).json({
     message: err.message,
     stack: process.env.NODE_ENV === 'production' ? null : err.stack,
