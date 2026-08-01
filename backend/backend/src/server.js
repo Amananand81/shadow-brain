@@ -22,7 +22,21 @@ if (process.env.MONGODB_URI) {
 console.log(`[SERVER] GROQ_API_KEY present: ${!!process.env.GROQ_API_KEY}`);
 console.log(`[SERVER] CEREBRAS_API_KEY present: ${!!process.env.CEREBRAS_API_KEY}`);
 console.log(`[SERVER] BACKEND_API_KEY present: ${!!process.env.BACKEND_API_KEY}`);
+console.log(`[SERVER] GOOGLE_CLIENT_ID present: ${!!process.env.GOOGLE_CLIENT_ID}`);
+if (process.env.GOOGLE_CLIENT_ID) {
+  console.log(`[SERVER] GOOGLE_CLIENT_ID (last 6): ...${process.env.GOOGLE_CLIENT_ID.slice(-6)}`);
+}
+console.log(`[SERVER] JWT_SECRET present: ${!!process.env.JWT_SECRET}`);
 console.log(`[SERVER] ═══════════════════════════════════════════════\n`);
+
+// ── Validate required auth env vars ─────────────────────────────────
+const requiredAuthVars = ['GOOGLE_CLIENT_ID', 'JWT_SECRET'];
+const missingAuth = requiredAuthVars.filter((v) => !process.env[v]);
+if (missingAuth.length > 0) {
+  console.error(`[SERVER] ⚠️  MISSING REQUIRED AUTH ENV VARS: ${missingAuth.join(', ')}`);
+  console.error(`[SERVER]   Google login will fail. Add them to Render → Environment.`);
+  logger.error(`Missing required auth env vars: ${missingAuth.join(', ')}`);
+}
 
 // Last line of defense: an uncaught rejection anywhere (e.g. a transient
 // MongoDB pool error surfacing from the driver's internal event handlers,

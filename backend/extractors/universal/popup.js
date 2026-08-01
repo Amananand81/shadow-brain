@@ -64,6 +64,15 @@ async function testBackend(url) {
 async function syncAllToBackend(backendUrl) {
   const convs = await chrome.runtime.sendMessage({ type: 'GET_ALL_CONVERSATIONS' });
   if (!convs?.length) return;
+
+  // Read JWT from extension storage — required for authenticated backend calls
+  const jwtResult = await chrome.runtime.sendMessage({ type: 'GET_JWT' });
+  const token = jwtResult?.token;
+  if (!token) {
+    setBackendStatus('error', '✗ Not signed in — log in on the Brain Shadow web app first');
+    return;
+  }
+
   // Only sync conversations that haven't been synced yet
   const unsynced = convs.filter(c => !c.synced);
   if (!unsynced.length) return;
@@ -72,7 +81,10 @@ async function syncAllToBackend(backendUrl) {
     try {
       const res = await fetch(`${backendUrl}/api/import/capture`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify(conv),
       });
       if (res.ok) synced++;

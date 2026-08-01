@@ -14,6 +14,7 @@ const STORAGE_KEY  = 'brain_shadow_conversations';
 const META_KEY     = 'brain_shadow_meta';
 const BACKEND_KEY  = 'brain_shadow_backend_url';
 const PROGRESS_KEY = 'brain_shadow_scrape_progress';
+const JWT_KEY      = 'brain_shadow_jwt_token';
 const DEFAULT_BACKEND = 'http://localhost:8000';
 
 // ── Keep service worker alive during scraping ──────────────
@@ -250,6 +251,9 @@ async function scrapePlatform(platform, baseUrl) {
 // ── Save conversation ──────────────────────────────────────
 async function saveConversation(data, source = 'realtime') {
   try {
+    console.log(`[JWT-RUNTIME] ═══ saveConversation called (source=${source}) ═══`);
+    console.log(`[JWT-RUNTIME]   title:    ${(data?.title || '').slice(0, 60)}`);
+    console.log(`[JWT-RUNTIME]   platform: ${data?.platform || 'unknown'}`);
     const result        = await chrome.storage.local.get(STORAGE_KEY);
     const conversations = result[STORAGE_KEY] || {};
     const key           = `${data.platform}_${data.external_id}`;
@@ -278,14 +282,64 @@ async function saveConversation(data, source = 'realtime') {
 
 async function syncToBackend(data) {
   try {
-    const r          = await chrome.storage.local.get(BACKEND_KEY);
+    const r          = await chrome.storage.local.get([BACKEND_KEY, JWT_KEY]);
     const backendUrl = (r[BACKEND_KEY] || DEFAULT_BACKEND).replace(/\/$/, '');
-    const response   = await fetch(`${backendUrl}/api/import/capture`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+    const token      = r[JWT_KEY];
+
+    // ── RUNTIME LOG: JWT value from storage ──
+    console.log(`[JWT-RUNTIME] ═══ syncToBackend START ═══`);
+    console.log(`[JWT-RUNTIME]   backendUrl:     ${backendUrl}`);
+    console.log(`[JWT-RUNTIME]   title:          ${(data?.title || '').slice(0, 60)}`);
+    console.log(`[JWT-RUNTIME]   platform:       ${data?.platform || 'unknown'}`);
+    console.log(`[JWT-RUNTIME]   token type:     ${typeof token}`);
+    console.log(`[JWT-RUNTIME]   token is null:  ${token === null}`);
+    console.log(`[JWT-RUNTIME]   token is undef: ${token === undefined}`);
+    console.log(`[JWT-RUNTIME]   token is empty: ${token === ''}`);
+    console.log(`[JWT-RUNTIME]   token length:   ${token?.length ?? 0}`);
+    console.log(`[JWT-RUNTIME]   token preview:  ${token ? token.slice(0, 40) + '...' : 'N/A'}`);
+    console.log(`[JWT-RUNTIME]   token full:     ${JSON.stringify(token)}`);
+
+    // ── Stack trace to identify caller ──
+    console.log(`[JWT-RUNTIME]   caller stack:   ${new Error().stack}`);
+
+    if (!token) {
+      console.warn(`[JWT-RUNTIME] ═══ BLOCKED: No token — sync aborted ═══`);
+      throw new Error('No authentication token found. Please log in to Brain Shadow first.');
+    }
+
+    // ── RUNTIME LOG: Complete headers object ──
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    };
+    console.log(`[JWT-RUNTIME] ═══ FETCH headers ═══`);
+    console.log(`[JWT-RUNTIME]   headers object: ${JSON.stringify(headers)}`);
+    console.log(`[JWT-RUNTIME]   Authorization:  ${headers['Authorization'] ? headers['Authorization'].slice(0, 50) + '...' : 'MISSING'}`);
+    console.log(`[JWT-RUNTIME]   Authorization length: ${headers['Authorization']?.length ?? 0}`);
+
+    const url = `${backendUrl}/api/import/capture`;
+    console.log(`[JWT-RUNTIME]   fetch URL:      ${url}`);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    console.log(`[JWT-RUNTIME] ═══ FETCH response ═══`);
+    console.log(`[JWT-RUNTIME]   status:   ${response.status} ${response.statusText}`);
+    console.log(`[JWT-RUNTIME]   ok:       ${response.ok}`);
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      console.error(`[JWT-RUNTIME]   response body: ${body.slice(0, 500)}`);
+      throw new Error(`HTTP ${response.status}`);
+    }
     return { ok: true };
   } catch (err) {
+    console.error(`[JWT-RUNTIME] ═══ syncToBackend FAILED ═══`);
+    console.error(`[JWT-RUNTIME]   error: ${err.message}`);
+    console.error(`[JWT-RUNTIME]   stack: ${err.stack}`);
     return { ok: false, error: err.message };
   }
 }
@@ -328,6 +382,53 @@ async function clearAllData() {
 
 // ── Message handler ────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+
+  // Handle Token pairing from Web bridge
+  if (message.type === 'SET_JWT') {
+    const incomingToken = message.token;
+    const incomingType  = typeof incomingToken;
+    const incomingIsNull = incomingToken === null;
+    const incomingIsUndefined = incomingToken === undefined;
+    const incomingIsEmpty = incomingToken === '';
+    const incomingLength = incomingToken?.length ?? 0;
+    console.log(`[JWT-RUNTIME] ═══ SET_JWT received ═══`);
+    console.log(`[JWT-RUNTIME]   type:       ${incomingType}`);
+    console.log(`[JWT-RUNTIME]   is null:    ${incomingIsNull}`);
+    console.log(`[JWT-RUNTIME]   is undef:   ${incomingIsUndefined}`);
+    console.log(`[JWT-RUNTIME]   is empty:   ${incomingIsEmpty}`);
+    console.log(`[JWT-RUNTIME]   length:     ${incomingLength}`);
+    console.log(`[JWT-RUNTIME]   preview:    ${incomingToken ? incomingToken.slice(0, 40) + '...' : 'N/A'}`);
+    console.log(`[JWT-RUNTIME]   full value: ${JSON.stringify(incomingToken)}`);
+
+    chrome.storage.local.set({ [JWT_KEY]: incomingToken }).then(async () => {
+      // Immediately read back to verify what was actually stored
+      const verify = await chrome.storage.local.get(JWT_KEY);
+      const stored = verify[JWT_KEY];
+      console.log(`[JWT-RUNTIME] ═══ AFTER SET — verify readback ═══`);
+      console.log(`[JWT-RUNTIME]   stored type:    ${typeof stored}`);
+      console.log(`[JWT-RUNTIME]   stored is null: ${stored === null}`);
+      console.log(`[JWT-RUNTIME]   stored length:  ${stored?.length ?? 0}`);
+      console.log(`[JWT-RUNTIME]   stored preview: ${stored ? stored.slice(0, 40) + '...' : 'N/A'}`);
+      console.log(`[JWT-RUNTIME]   stored full:    ${JSON.stringify(stored)}`);
+      console.log(`[JWT-RUNTIME]   match:          ${stored === incomingToken}`);
+      sendResponse({ status: 'saved', stored });
+    });
+    return true;
+  }
+
+  if (message.type === 'GET_JWT') {
+    chrome.storage.local.get(JWT_KEY).then(result => {
+      const jwt = result[JWT_KEY] || null;
+      console.log(`[JWT-RUNTIME] ═══ GET_JWT requested ═══`);
+      console.log(`[JWT-RUNTIME]   has token: ${!!jwt}`);
+      console.log(`[JWT-RUNTIME]   type:      ${typeof jwt}`);
+      console.log(`[JWT-RUNTIME]   length:    ${jwt?.length ?? 0}`);
+      console.log(`[JWT-RUNTIME]   preview:   ${jwt ? jwt.slice(0, 40) + '...' : 'N/A'}`);
+      console.log(`[JWT-RUNTIME]   full:      ${JSON.stringify(jwt)}`);
+      sendResponse({ token: jwt });
+    });
+    return true;
+  }
 
   // Start scraping one platform (concurrent — doesn't block other platforms)
   if (message.type === 'START_PLATFORM_IMPORT') {
@@ -387,6 +488,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Sync ALL local conversations to backend (runs in SW — survives popup close)
   if (message.type === 'SYNC_ALL_TO_BACKEND') {
     (async () => {
+      console.log(`[JWT-RUNTIME] ═══ SYNC_ALL_TO_BACKEND triggered ═══`);
+      const jwtCheck = await chrome.storage.local.get(JWT_KEY);
+      console.log(`[JWT-RUNTIME]   JWT in storage at sync time: ${jwtCheck[JWT_KEY] ? 'YES (len=' + jwtCheck[JWT_KEY].length + ')' : 'NO'}`);
       const r          = await chrome.storage.local.get([STORAGE_KEY, BACKEND_KEY]);
       const convs      = Object.values(r[STORAGE_KEY] || {});
       const backendUrl = (r[BACKEND_KEY] || DEFAULT_BACKEND).replace(/\/$/, '');
@@ -400,7 +504,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.warn(`[Brain Shadow] Sync failed for "${conv.title}" (${conv.platform}):`, result.error);
         }
       }
-      console.log(`[Brain Shadow] SYNC_ALL_TO_BACKEND: ${synced}/${convs.length} synced, ${failed} failed`);
+      console.log(`[JWT-RUNTIME] ═══ SYNC_ALL_TO_BACKEND done: ${synced}/${convs.length} synced, ${failed} failed ═══`);
       sendResponse({ synced, failed, total: convs.length });
     })();
     return true;
@@ -422,18 +526,35 @@ chrome.storage.local.get(PROGRESS_KEY).then(r => {
 // On every SW startup: push all locally stored conversations to backend
 (async () => {
   try {
-    const r          = await chrome.storage.local.get([STORAGE_KEY, BACKEND_KEY]);
+    console.log(`[JWT-RUNTIME] ═══ STARTUP SYNC fired ═══`);
+    const r          = await chrome.storage.local.get([STORAGE_KEY, BACKEND_KEY, JWT_KEY]);
     const convs      = Object.values(r[STORAGE_KEY] || {});
-    if (!convs.length) return;
+    const jwtAtStartup = r[JWT_KEY];
+    console.log(`[JWT-RUNTIME]   conversations to sync: ${convs.length}`);
+    console.log(`[JWT-RUNTIME]   JWT at startup: ${jwtAtStartup ? 'PRESENT (len=' + jwtAtStartup.length + ')' : 'MISSING'}`);
+    console.log(`[JWT-RUNTIME]   JWT preview: ${jwtAtStartup ? jwtAtStartup.slice(0, 40) + '...' : 'N/A'}`);
+    if (!convs.length) {
+      console.log(`[JWT-RUNTIME]   No conversations — startup sync skipped`);
+      return;
+    }
     const backendUrl = (r[BACKEND_KEY] || DEFAULT_BACKEND).replace(/\/$/, '');
     // Test backend first
     const health = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
-    if (!health?.ok) return;
-    for (const conv of convs) {
-      await syncToBackend(conv).catch(() => {});
+    if (!health?.ok) {
+      console.log(`[JWT-RUNTIME]   Backend unreachable — startup sync aborted`);
+      return;
     }
-    console.log(`[Brain Shadow] Startup sync: pushed ${convs.length} conversations`);
-  } catch {}
+    let syncedCount = 0, failedCount = 0;
+    for (const conv of convs) {
+      console.log(`[JWT-RUNTIME]   Startup sync calling syncToBackend for "${(conv.title || '').slice(0, 40)}"`);
+      const result = await syncToBackend(conv).catch(() => ({ ok: false }));
+      if (result.ok) syncedCount++;
+      else failedCount++;
+    }
+    console.log(`[JWT-RUNTIME] ═══ STARTUP SYNC done: ${syncedCount}/${convs.length} synced, ${failedCount} failed ═══`);
+  } catch (err) {
+    console.error(`[JWT-RUNTIME]   Startup sync threw: ${err.message}`);
+  }
 })();
 
 console.log('[Brain Shadow] Universal background service worker started');

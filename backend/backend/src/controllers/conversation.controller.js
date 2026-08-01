@@ -6,44 +6,55 @@ const logger = require('../utils/logger');
 const createConversation = async (req, res, next) => {
   const startTime = Date.now();
   try {
-    console.log(`\n[CONTROLLER] ─── createConversation START ───`);
-    console.log(`[CONTROLLER] Timestamp: ${new Date().toISOString()}`);
-    console.log(`[CONTROLLER] Body keys: ${Object.keys(req.body || {}).join(', ')}`);
+    console.log(`\n[JWT-STEP-8] ═══ createConversation START ═══`);
+    console.log(`[JWT-STEP-8]   Timestamp: ${new Date().toISOString()}`);
+    console.log(`[JWT-STEP-8]   req.user: ${JSON.stringify(req.user)}`);
+    console.log(`[JWT-STEP-8]   req.user.userId: ${req.user?.userId || 'MISSING'}`);
+    console.log(`[JWT-STEP-8]   req.user.email: ${req.user?.email || 'MISSING'}`);
+
+    if (!req.user?.userId) {
+      console.error(`[JWT-STEP-8] ❌ FAIL — req.user.userId is missing. Middleware did not set req.user.`);
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    console.log(`[JWT-STEP-8] ✅ PASS — req.user.userId = "${req.user.userId}"`);
 
     if (!req.body || Object.keys(req.body).length === 0) {
-      console.warn(`[CONTROLLER] Empty request body — returning 400`);
+      console.error(`[JWT-STEP-8] ❌ FAIL — Empty request body`);
       return res.status(400).json({ message: 'Empty request body' });
     }
 
     const { platform, external_id, title, messages } = req.body;
-    console.log(`[CONTROLLER] platform: "${platform}"`);
-    console.log(`[CONTROLLER] external_id: "${external_id}"`);
-    console.log(`[CONTROLLER] title: "${(title || '').substring(0, 60)}"`);
-    console.log(`[CONTROLLER] messages count: ${(messages || []).length}`);
+    console.log(`[JWT-STEP-8]   platform: "${platform}"`);
+    console.log(`[JWT-STEP-8]   external_id: "${external_id}"`);
+    console.log(`[JWT-STEP-8]   title: "${(title || '').substring(0, 60)}"`);
+    console.log(`[JWT-STEP-8]   messages count: ${(messages || []).length}`);
+    console.log(`[JWT-STEP-8]   MongoDB save will use userId: "${req.user.userId}"`);
 
     // Validate platform enum before hitting the service
     const VALID_PLATFORMS = ['chatgpt', 'claude', 'gemini', 'deepseek', 'blackbox', 'copilot', 'mscopilot', 'perplexity', 'grok'];
     const normalizedPlatform = platform ? platform.toLowerCase() : 'chatgpt';
     if (!VALID_PLATFORMS.includes(normalizedPlatform)) {
-      console.error(`[CONTROLLER] INVALID PLATFORM: "${platform}" → normalized "${normalizedPlatform}"`);
-      console.error(`[CONTROLLER] Valid platforms: ${VALID_PLATFORMS.join(', ')}`);
+      console.error(`[JWT-STEP-8] ❌ FAIL — INVALID PLATFORM: "${platform}"`);
       return res.status(400).json({
         message: `Invalid platform: "${platform}". Valid: ${VALID_PLATFORMS.join(', ')}`
       });
     }
 
-    console.log(`[CONTROLLER] Calling conversationService.createOrUpdate...`);
-    const conversation = await conversationService.createOrUpdate(req.body);
-    console.log(`[CONTROLLER] Service returned: _id=${conversation._id}, platform=${conversation.platform}, status=${conversation.status}`);
-    console.log(`[CONTROLLER] Messages stored: ${conversation.messages?.length}`);
-    console.log(`[CONTROLLER] DB write confirmed in ${Date.now() - startTime}ms`);
+    console.log(`[JWT-STEP-8]   Calling conversationService.createOrUpdate(data, "${req.user.userId}")...`);
+    const conversation = await conversationService.createOrUpdate(req.body, req.user.userId);
+    console.log(`[JWT-STEP-8] ✅ PASS — MongoDB save confirmed`);
+    console.log(`[JWT-STEP-8]   _id: ${conversation._id}`);
+    console.log(`[JWT-STEP-8]   platform: ${conversation.platform}`);
+    console.log(`[JWT-STEP-8]   userId in doc: ${conversation.userId}`);
+    console.log(`[JWT-STEP-8]   messages: ${conversation.messages?.length}`);
+    console.log(`[JWT-STEP-8]   DB write in ${Date.now() - startTime}ms`);
     
     // Trigger enrichment immediately (no queue)
     setImmediate(() => {
-      console.log(`[CONTROLLER] Triggering enrichment for ${conversation._id}`);
+      console.log(`[JWT-STEP-8]   Triggering enrichment for ${conversation._id}`);
       enrichmentService.process(conversation._id).catch(err => {
-        console.error(`[CONTROLLER] Background enrichment failed for ${conversation._id}: ${err.message}`);
-        console.error(`[CONTROLLER] Enrichment error stack: ${err.stack}`);
+        console.error(`[JWT-STEP-8]   Background enrichment failed: ${err.message}`);
       });
     });
 
@@ -52,17 +63,12 @@ const createConversation = async (req, res, next) => {
       id: conversation._id,
       status: 'PENDING'
     };
-    console.log(`[CONTROLLER] Sending 202 response: ${JSON.stringify(responseBody)}`);
-    console.log(`[CONTROLLER] ─── createConversation END (success) ───\n`);
+    console.log(`[JWT-STEP-8]   Sending 202 response`);
+    console.log(`[JWT-STEP-8] ═══ createConversation END (success) ═══\n`);
     res.status(202).json(responseBody);
   } catch (error) {
-    console.error(`[CONTROLLER] ─── createConversation ERROR ───`);
-    console.error(`[CONTROLLER] Error message: ${error.message}`);
-    console.error(`[CONTROLLER] Error name: ${error.name}`);
-    console.error(`[CONTROLLER] Error stack: ${error.stack}`);
-    if (error.errors) {
-      console.error(`[CONTROLLER] Validation errors:`, JSON.stringify(error.errors, null, 2));
-    }
+    console.error(`[JWT-STEP-8] ❌ FAIL — createConversation error: ${error.message}`);
+    console.error(`[JWT-STEP-8]   Stack: ${error.stack}`);
     next(error);
   }
 };
@@ -85,7 +91,7 @@ const bulkCreateConversations = async (req, res, next) => {
       const convoData = conversations[i];
       console.log(`[CONTROLLER] Bulk item ${i + 1}/${conversations.length}: platform="${convoData.platform}", external_id="${convoData.external_id}", title="${(convoData.title || '').substring(0, 40)}"`);
       try {
-        const convo = await conversationService.createOrUpdate(convoData);
+        const convo = await conversationService.createOrUpdate(convoData, req.user.userId);
         console.log(`[CONTROLLER] Bulk item ${i + 1} OK: _id=${convo._id}`);
         
         setImmediate(() => {
@@ -119,7 +125,7 @@ const bulkCreateConversations = async (req, res, next) => {
 const listConversations = async (req, res, next) => {
   try {
     const { page, limit, platform } = req.query;
-    const query = platform ? { platform } : {};
+    const query = platform ? { platform, userId: req.user.userId } : { userId: req.user.userId };
     const conversations = await conversationService.list(query, { page: Number(page), limit: Number(limit) });
     res.json(conversations);
   } catch (error) {
@@ -129,7 +135,7 @@ const listConversations = async (req, res, next) => {
 
 const getConversationById = async (req, res, next) => {
   try {
-    const conversation = await conversationService.getById(req.params.id);
+    const conversation = await conversationService.getById(req.params.id, req.user.userId);
     if (!conversation) return res.status(404).json({ message: 'Not found' });
     res.json(conversation);
   } catch (error) {
@@ -139,7 +145,7 @@ const getConversationById = async (req, res, next) => {
 
 const getConversationStatus = async (req, res, next) => {
   try {
-    const conversation = await conversationService.getById(req.params.id);
+    const conversation = await conversationService.getById(req.params.id, req.user.userId);
     if (!conversation) return res.status(404).json({ message: 'Not found' });
     res.json({
       id: conversation._id,
@@ -183,9 +189,10 @@ const searchConversations = async (req, res, next) => {
     // Prefix-aware matching: \b at start so "mongo" matches "mongodb", "mongodb" etc.
     const wordRegexes = words.map(w => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'));
 
-    const dbFilter = Array.isArray(platforms) && platforms.length > 0
-      ? { platform: { $in: platforms } }
-      : {};
+    const dbFilter = { userId: req.user.userId };
+    if (Array.isArray(platforms) && platforms.length > 0) {
+      dbFilter.platform = { $in: platforms };
+    }
     const allConvs = await conversationService.list(dbFilter, { limit: 200 });
 
     const scored = allConvs
