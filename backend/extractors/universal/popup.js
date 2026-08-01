@@ -47,7 +47,7 @@ function setBackendStatus(state, msg) {
 async function testBackend(url) {
   setBackendStatus('idle', 'Testing…');
   try {
-    const backendUrl = (url || 'http://localhost:8000').replace(/\/$/, '');
+    const backendUrl = (url || 'https://shadow-brain-u4ua.onrender.com').replace(/\/$/, '');
     const res = await fetch(`${backendUrl}/health`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     setBackendStatus('ok', '✓ Backend connected — syncing all chats…');
@@ -247,7 +247,7 @@ document.getElementById('btnSyncNow').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = '⏳ Syncing…';
   const urlResult  = await chrome.runtime.sendMessage({ type: 'GET_BACKEND_URL' });
-  const backendUrl = (urlResult?.url || 'http://localhost:8000').replace(/\/$/, '');
+  const backendUrl = (urlResult?.url || 'https://shadow-brain-u4ua.onrender.com').replace(/\/$/, '');
   try {
     const res = await fetch(`${backendUrl}/health`);
     if (!res.ok) throw new Error(`Backend returned ${res.status}`);
@@ -320,7 +320,7 @@ document.getElementById('btnClear').addEventListener('click', async () => {
 
 // ── Backend URL ────────────────────────────────────────────
 document.getElementById('btnTestUrl').addEventListener('click', async () => {
-  await testBackend(document.getElementById('backendUrl').value.trim() || 'http://localhost:8000');
+  await testBackend(document.getElementById('backendUrl').value.trim() || 'https://shadow-brain-u4ua.onrender.com');
 });
 document.getElementById('btnSaveUrl').addEventListener('click', async () => {
   const url = document.getElementById('backendUrl').value.trim(); if (!url) return;
@@ -341,7 +341,7 @@ chrome.storage.onChanged.addListener((changes) => {
 // ── Init ───────────────────────────────────────────────────
 (async () => {
   const urlResult  = await chrome.runtime.sendMessage({ type: 'GET_BACKEND_URL' });
-  document.getElementById('backendUrl').value = urlResult?.url || 'http://localhost:8000';
+  document.getElementById('backendUrl').value = urlResult?.url || 'https://shadow-brain-u4ua.onrender.com';
 
   // Detect current tab's platform
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -359,5 +359,5 @@ chrome.storage.onChanged.addListener((changes) => {
   if (prog) renderProgress(prog);
 
   // Test backend directly from popup (not via service worker)
-  await testBackend(urlResult?.url || 'http://localhost:8000');
+  await testBackend(urlResult?.url || 'https://shadow-brain-u4ua.onrender.com');
 })();
