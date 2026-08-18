@@ -8,6 +8,9 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "db:up": "docker compose -f ../../docker-compose.yml up -d mongodb",
+    "db:down": "docker compose -f ../../docker-compose.yml down",
+    "dev:with-db": "npm run db:up && node --watch src/server.js",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js"
   },
@@ -24,6 +27,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.1",
     "morgan": "^1.11.0",
+    "helmet": "^7.0.0",
     "openai": "^6.44.0",
     "uuid": "^14.0.0",
     "winston": "^3.19.0"

@@ -1,6 +1,48 @@
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
+let localMongoRetryTimer = null;
+let localMongoRetrying = false;
+
+const isLocalMongoUri = (uri) => {
+  if (!uri) return false;
+
+  try {
+    const { hostname, port } = new URL(uri);
+    return ['localhost', '127.0.0.1', '::1'].includes(hostname) && (!port || port === '27017');
+  } catch (error) {
+    return uri.includes('localhost:27017') || uri.includes('127.0.0.1:27017');
+  }
+};
+
+const scheduleLocalMongoRetry = (mongoUri) => {
+  if (localMongoRetryTimer) return;
+
+  console.error('[DB DEBUG] Backend will keep running and retry local MongoDB every 5 seconds.');
+  logger.warn('Local MongoDB unavailable; backend will retry connection every 5 seconds');
+
+  localMongoRetryTimer = setInterval(async () => {
+    if (localMongoRetrying || mongoose.connection.readyState === 1) return;
+    localMongoRetrying = true;
+
+    try {
+      await mongoose.connect(mongoUri, {
+        serverSelectionTimeoutMS: 3000,
+        socketTimeoutMS: 60000,
+        heartbeatFrequencyMS: 10000,
+      });
+      clearInterval(localMongoRetryTimer);
+      localMongoRetryTimer = null;
+      logger.info('MongoDB connected after retry');
+      console.log('[DB DEBUG] Local MongoDB connected after retry');
+    } catch (retryError) {
+      console.error(`[DB DEBUG] MongoDB retry failed: ${retryError.message}`);
+    } finally {
+      localMongoRetrying = false;
+    }
+  }, 5000);
+};
+
 const connectDB = async () => {
   // ── DEBUG: Print the full connection config ──────────────────────
   const rawUri = process.env.MONGODB_URI || '';
@@ -29,9 +71,9 @@ const connectDB = async () => {
     console.log(`[DB DEBUG] Could not parse URI for DB name: ${e.message}`);
   }
 
-  try {
-    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URL || process.env.DATABASE_URL;
+  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URL || process.env.DATABASE_URL;
 
+  try {
     if (!mongoUri) {
       throw new Error('Missing MongoDB connection string. Set MONGODB_URI, MONGO_URL, or DATABASE_URL.');
     }
@@ -122,6 +164,15 @@ const connectDB = async () => {
     console.error(`[DB DEBUG] !!! CONNECTION FAILED !!!`);
     console.error(`[DB DEBUG] Error: ${error.message}`);
     console.error(`[DB DEBUG] Full stack: ${error.stack}`);
+    if (isLocalMongoUri(mongoUri)) {
+      console.error('[DB DEBUG] Local MongoDB is not reachable on port 27017.');
+      console.error('[DB DEBUG] Start it with: npm.cmd run db:up');
+      console.error('[DB DEBUG] Or run the backend and database together with: npm.cmd run dev:with-db');
+      if (process.env.NODE_ENV !== 'production') {
+        scheduleLocalMongoRetry(mongoUri);
+        return null;
+      }
+    }
     logger.error(`Error connecting to MongoDB: ${error.message}`);
     process.exit(1);
   }

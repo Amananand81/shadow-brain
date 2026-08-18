@@ -1,10 +1,11 @@
-require('dotenv').config();
+require('./config/env')();
 const app        = require('./app');
 const connectDB  = require('./config/db');
 const logger     = require('./utils/logger');
 const enrichment = require('./services/enrichment.service');
 
 const PORT = process.env.PORT || 8000;
+const USE_HTTPS = process.env.USE_HTTPS === 'true' || !!process.env.HTTPS_KEY || !!process.env.HTTPS_KEY_PATH;
 
 // ── DEBUG: Print all environment variables (mask secrets) ────────
 console.log(`\n[SERVER] ═══════════════════════════════════════════════`);
@@ -22,7 +23,21 @@ if (process.env.MONGODB_URI) {
 console.log(`[SERVER] GROQ_API_KEY present: ${!!process.env.GROQ_API_KEY}`);
 console.log(`[SERVER] CEREBRAS_API_KEY present: ${!!process.env.CEREBRAS_API_KEY}`);
 console.log(`[SERVER] BACKEND_API_KEY present: ${!!process.env.BACKEND_API_KEY}`);
+console.log(`[SERVER] GOOGLE_CLIENT_ID present: ${!!process.env.GOOGLE_CLIENT_ID}`);
+if (process.env.GOOGLE_CLIENT_ID) {
+  console.log(`[SERVER] GOOGLE_CLIENT_ID (last 6): ...${process.env.GOOGLE_CLIENT_ID.slice(-6)}`);
+}
+console.log(`[SERVER] JWT_SECRET present: ${!!process.env.JWT_SECRET}`);
 console.log(`[SERVER] ═══════════════════════════════════════════════\n`);
+
+// ── Validate required auth env vars ─────────────────────────────────
+const requiredAuthVars = ['GOOGLE_CLIENT_ID', 'JWT_SECRET'];
+const missingAuth = requiredAuthVars.filter((v) => !process.env[v]);
+if (missingAuth.length > 0) {
+  console.error(`[SERVER] ⚠️  MISSING REQUIRED AUTH ENV VARS: ${missingAuth.join(', ')}`);
+  console.error(`[SERVER]   Google login will fail. Add them to Render → Environment.`);
+  logger.error(`Missing required auth env vars: ${missingAuth.join(', ')}`);
+}
 
 // Last line of defense: an uncaught rejection anywhere (e.g. a transient
 // MongoDB pool error surfacing from the driver's internal event handlers,
@@ -46,6 +61,45 @@ const retryPendingSafely = () => {
 };
 
 connectDB().then(() => {
+  // If HTTPS materials are provided and USE_HTTPS true, start an HTTPS server.
+  if (USE_HTTPS && process.env.NODE_ENV === 'production') {
+    try {
+      const fs = require('fs');
+      const https = require('https');
+
+      // Support direct key/cert via env or file paths
+      const key = process.env.HTTPS_KEY || (process.env.HTTPS_KEY_PATH ? fs.readFileSync(process.env.HTTPS_KEY_PATH) : undefined);
+      const cert = process.env.HTTPS_CERT || (process.env.HTTPS_CERT_PATH ? fs.readFileSync(process.env.HTTPS_CERT_PATH) : undefined);
+      const ca = process.env.HTTPS_CA || (process.env.HTTPS_CA_PATH ? fs.readFileSync(process.env.HTTPS_CA_PATH) : undefined);
+
+      if (!key || !cert) {
+        console.warn('[SERVER] HTTPS enabled but missing key/cert; falling back to HTTP');
+      } else {
+        const credentials = { key, cert };
+        if (ca) credentials.ca = ca;
+        const server = https.createServer(credentials, app).listen(PORT, () => {
+          console.log(`\n[SERVER] ═══════════════════════════════════════════════`);
+          console.log(`[SERVER] HTTPS server listening on port ${PORT}`);
+          console.log(`[SERVER] Environment: ${process.env.NODE_ENV}`);
+          console.log(`[SERVER] Health check: https://localhost:${PORT}/health`);
+          console.log(`[SERVER] Import endpoint: https://localhost:${PORT}/api/import/capture`);
+          console.log(`[SERVER] Conversations endpoint: https://localhost:${PORT}/api/conversations`);
+          console.log(`[SERVER] ═══════════════════════════════════════════════\n`);
+          logger.info(`HTTPS server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+        });
+
+        // schedule retries
+        setTimeout(retryPendingSafely, 3000);
+        setInterval(retryPendingSafely, 5 * 60 * 1000);
+        return;
+      }
+    } catch (err) {
+      console.error(`[SERVER] Failed to start HTTPS server: ${err.message}`);
+      logger.error(`[SERVER] Failed to start HTTPS server: ${err.stack}`);
+    }
+  }
+
+  // Default: HTTP server (keeps existing behavior). When behind a proxy, use TRUST_PROXY env and HTTPS redirect in app.js.
   app.listen(PORT, () => {
     console.log(`\n[SERVER] ═══════════════════════════════════════════════`);
     console.log(`[SERVER] Server listening on port ${PORT}`);

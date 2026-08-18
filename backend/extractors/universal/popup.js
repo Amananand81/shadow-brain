@@ -64,26 +64,31 @@ async function testBackend(url) {
 async function syncAllToBackend(backendUrl) {
   const convs = await chrome.runtime.sendMessage({ type: 'GET_ALL_CONVERSATIONS' });
   if (!convs?.length) return;
-  // Only sync conversations that haven't been synced yet
-  const unsynced = convs.filter(c => !c.synced);
-  if (!unsynced.length) return;
-  let synced = 0;
-  for (const conv of unsynced) {
-    try {
-      const res = await fetch(`${backendUrl}/api/import/capture`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(conv),
-      });
-      if (res.ok) synced++;
-    } catch {}
+
+  // Read JWT from extension storage — required for authenticated backend calls
+  const jwtResult = await chrome.runtime.sendMessage({ type: 'GET_JWT' });
+  const token = jwtResult?.token;
+  if (!token) {
+    setBackendStatus('error', '✗ Not signed in — log in on the Brain Shadow web app first');
+    return;
   }
-  if (synced > 0) {
-    setBackendStatus('ok', `✓ Synced ${synced} / ${convs.length} chats to MongoDB`);
-    showToast(`Synced ${synced} chats to MongoDB ✅`, 'success');
-    await loadStats();
-    await loadRecentConversations();
+
+  await chrome.runtime.sendMessage({ type: 'SET_BACKEND_URL', url: backendUrl });
+  const result = await chrome.runtime.sendMessage({ type: 'SYNC_ALL_TO_BACKEND', backendUrl });
+  if (result?.synced > 0 && result?.failed === 0) {
+    setBackendStatus('ok', `✓ Synced ${result.synced} / ${result.total} chats to MongoDB`);
+    showToast(`Synced ${result.synced} chats to MongoDB ✅`, 'success');
+  } else if (result?.synced > 0) {
+    const firstError = result.errors?.[0]?.error || 'some chats failed';
+    setBackendStatus('error', `⚠ Synced ${result.synced} / ${result.total}; ${result.failed} failed`);
+    showToast(firstError, 'error');
+  } else {
+    const firstError = result?.errors?.[0]?.error || 'check backend logs';
+    setBackendStatus('error', `✗ 0 / ${result?.total || convs.length} synced — ${firstError}`);
+    showToast(firstError, 'error');
   }
+  await loadStats();
+  await loadRecentConversations();
 }
 
 // ── Stats + platform badges ────────────────────────────────
