@@ -50,7 +50,7 @@
         "https://grok.com/*",
         "https://x.com/i/grok*"
       ],
-      "js": ["fetch.js"],
+      "js": ["discovery-engine.js", "fetch.js"],
       "run_at": "document_idle"
     },
     {

@@ -71,6 +71,9 @@
     .progress-count { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--accent2); }
     .progress-bar-bg { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
     .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width .3s ease; width: 0%; }
+    /* Discovery phase — total unknown until discovery completes */
+    .progress-bar-fill.indeterminate { background: linear-gradient(90deg, var(--accent) 25%, var(--accent2) 50%, var(--accent) 75%); background-size: 200% 100%; animation: bsSlide 1.2s linear infinite; }
+    @keyframes bsSlide { to { background-position: -200% 0; } }
     .progress-title { margin-top: 5px; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .recent-section { border-top: 1px solid var(--border); padding: 10px 14px; }
