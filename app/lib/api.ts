@@ -84,7 +84,7 @@ export interface MemorySource {
 }
 
 export async function searchMemory(query: string, platforms?: string[]): Promise<{ answer: string; sources: MemorySource[] }> {
-  const url = '/api/conversations/search';
+  const url = toApiUrl('/api/conversations/search');
   const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
   if (!token) {
     return {
