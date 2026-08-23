@@ -158,6 +158,14 @@ const getConversationStatus = async (req, res, next) => {
 };
 
 const buildFallbackAnswer = (query, scored) => {
+  const count = scored.length;
+  const countPhrase = count === 1
+    ? '1 conversation'
+    : count <= 3
+      ? 'a few conversations'
+      : count <= 10
+        ? 'several conversations'
+        : 'many conversations';
   const topResults = scored.slice(0, 3);
   const sentences = topResults.map(({ conv }, index) => {
     const date = conv.createdAt
@@ -169,7 +177,7 @@ const buildFallbackAnswer = (query, scored) => {
     return `${index + 1}. ${conv.title || 'Untitled'} on ${platform} (${date}) discussed ${detail}`;
   });
 
-  return `I found ${scored.length} conversation${scored.length === 1 ? '' : 's'} related to "${query}". ${sentences.join(' ')}.`;
+  return `I found ${countPhrase} related to "${query}".\n${sentences.join('\n')}.`;
 };
 
 const searchConversations = async (req, res, next) => {
@@ -265,6 +273,7 @@ ${context}
 
 Write 2-3 plain sentences summarising what was discussed about "${query}". Your response must:
 - Be written in plain English sentences (no markdown, no bullet points, no headers)
+- Put each conversation reference on its own line
 - Mention the platform name (e.g. ChatGPT, Gemini) for each conversation referenced
 - Only describe what was actually in the messages shown above
 - Not include steps, code, or detailed explanations`;
