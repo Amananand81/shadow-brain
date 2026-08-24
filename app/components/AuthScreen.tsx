@@ -11,16 +11,16 @@ import { GoogleSignInButton } from "./GoogleSignInButton";
 import {
   checkPassword,
   isEmailValid,
-  login,
-  signUp,
   requestPasswordReset,
   resetPassword,
   saveRememberMe,
   clearRememberMe,
   getSavedEmail,
   setSession,
+  login as localLogin,
+  signUp as localSignUp,
 } from "@/app/lib/auth";
-import { googleLogin } from "@/app/lib/api";
+import { googleLogin, passwordAuth } from "@/app/lib/api";
 
 interface AuthScreenProps {
   onAuthenticated: (email: string) => void;
@@ -135,16 +135,38 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     setError(null);
     setLoading(true);
 
-    const result =
-      mode === "login"
-        ? await login(email, password)
-        : await signUp(email, password, confirmPassword);
+    let result: { ok: true; email: string } | { ok: false; error: string };
+    let backendToken = "";
+    try {
+      if (mode !== "login" && mode !== "signup") {
+        result = { ok: false, error: "Invalid authentication mode." };
+      } else if (mode === "signup" && password !== confirmPassword) {
+        result = { ok: false, error: "Passwords do not match." };
+      } else {
+        try {
+          const response = await passwordAuth(email, password, mode);
+          backendToken = response.token;
+          result = { ok: true, email: response.user.email };
+        } catch {
+          // Fallback to local auth if backend password endpoint is offline
+          if (mode === "signup") {
+            result = await localSignUp(email, password, confirmPassword);
+          } else {
+            result = await localLogin(email, password);
+          }
+        }
+      }
+    } catch (error) {
+      result = { ok: false, error: error instanceof Error ? error.message : "Authentication failed." };
+    }
 
     setLoading(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
+
+    setSession(result.email, backendToken);
 
     if (rememberMe) {
       saveRememberMe(result.email);

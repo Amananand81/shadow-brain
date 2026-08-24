@@ -9,6 +9,20 @@ export interface ApiMessage {
   content: string;
 }
 
+export async function passwordAuth(email: string, password: string, mode: 'login' | 'signup') {
+  const res = await fetch(toApiUrl('/api/auth/password'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, password, mode }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.token || !data?.user?.email) {
+    throw new Error(data?.message || `Authentication failed (${res.status})`);
+  }
+  return data as { token: string; user: { email: string; name?: string; avatar?: string } };
+}
+
 export interface ApiEnrichment {
   topic?: string;
   category?: string;

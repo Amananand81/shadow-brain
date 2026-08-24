@@ -32,6 +32,7 @@ interface GoogleSignInButtonProps {
 
 export function GoogleSignInButton({ onCredential }: GoogleSignInButtonProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -43,7 +44,7 @@ export function GoogleSignInButton({ onCredential }: GoogleSignInButtonProps) {
     let cancelled = false;
 
     function render() {
-      if (cancelled || !containerRef.current || !window.google) return;
+      if (cancelled || initializedRef.current || !containerRef.current || !window.google) return;
       window.google.accounts.id.initialize({
         client_id: clientId!,
         callback: (response) => onCredential(response.credential),
@@ -57,6 +58,7 @@ export function GoogleSignInButton({ onCredential }: GoogleSignInButtonProps) {
         text: "continue_with",
         shape: "pill",
       });
+      initializedRef.current = true;
     }
 
     if (window.google) {

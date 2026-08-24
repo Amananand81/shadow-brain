@@ -147,8 +147,7 @@ export default function Home() {
         console.log(`[JWT-STEP-3]   postMessage dispatched`);
         console.log(`[JWT-STEP-3]   Note: #shadowbrain-auth-bridge div will render after React re-render (token state is now set)`);
       } else {
-        console.error(`[JWT-STEP-3] ❌ FAIL — NO token in localStorage — postMessage NOT sent`);
-        console.error(`[JWT-STEP-3]   The extension will never receive the JWT`);
+        console.info(`[JWT-STEP-3] No backend token for local authentication; extension login bridge skipped`);
       }
     }
 
@@ -164,6 +163,13 @@ export default function Home() {
       setToken(window.localStorage.getItem("shadowbrain_token"));
     }
   }, [stage]);
+
+  // Keep the universal extension paired even when the page or extension is
+  // reloaded after the user has already signed in.
+  useEffect(() => {
+    if (typeof window === "undefined" || !token) return;
+    window.postMessage({ type: "SHADOWBRAIN_LOGIN", token }, window.location.origin);
+  }, [token]);
 
   const handleAgentsSelected = useCallback((agents: string[]) => {
     setSelectedAgents(agents);

@@ -470,6 +470,7 @@ export const ObsidianGraph = forwardRef<ObsidianGraphHandle, ObsidianGraphProps>
   ref
 ) {
   const nodes = useMemo(() => buildNodeLayout(), []);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const controlsRef = useRef<any>(null);
 
@@ -491,85 +492,50 @@ export const ObsidianGraph = forwardRef<ObsidianGraphHandle, ObsidianGraphProps>
     controls.update();
   }, []);
 
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "shadow-brain-graph", action: "set-locked", value: locked === true },
+      window.location.origin
+    );
+  }, [locked]);
+
+  useEffect(() => {
+    const handleGraphMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      if (event.data?.type !== "shadow-brain-graph" || event.data.action !== "node-selected") return;
+      if (typeof event.data.nodeId !== "number") return;
+      onNodeClick?.(event.data.nodeId, searchKeyword);
+    };
+
+    window.addEventListener("message", handleGraphMessage);
+    return () => window.removeEventListener("message", handleGraphMessage);
+  }, [onNodeClick, searchKeyword]);
+
   const resetView = useCallback(() => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-    controls.object.position.set(0, 0, DEFAULT_DIST);
-    controls.target.set(0, 0, 0);
-    controls.update();
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "shadow-brain-graph", action: "reset-view" },
+      window.location.origin
+    );
   }, []);
 
   useImperativeHandle(ref, () => ({ focus: resetView }), [resetView]);
 
   return (
     <div className="relative w-full h-full">
-      <Canvas
-        dpr={[1, 1.75]}
-        camera={{ position: [0, 0, DEFAULT_DIST], fov: 45, near: 0.1, far: 50 }}
-        style={{ width: "100%", height: "100%", display: "block" }}
-      >
-        <Suspense fallback={null}>
-          <Scene
-            nodes={nodes}
-            highlightedNodes={hNodes}
-            nodeDates={nodeDates ?? new Map()}
-            searchActive={searchActive}
-            searchKeyword={searchKeyword}
-            onNodeClick={onNodeClick}
-            controlsRef={controlsRef}
-            locked={locked}
-            onZoomLevelChange={onZoomLevelChange}
+      <div style={{ width: "100%", height: "100%" }}>
+          <iframe
+            ref={iframeRef}
+            src="/knowledge_graph.html"
+            title="Shadow Brain knowledge graph"
+            className="h-full w-full border-0"
+            onLoad={() => {
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: "shadow-brain-graph", action: "set-locked", value: locked === true },
+                window.location.origin
+              );
+            }}
           />
-        </Suspense>
-      </Canvas>
-
-      {/* Floating zoom controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-1.5 z-10">
-        <motion.button
-          onClick={() => zoomBy(1.25)}
-          title="Zoom in"
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{
-            background: "rgba(17, 24, 39, 0.7)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid var(--border-subtle)",
-            color: "var(--text-secondary)",
-          }}
-          whileHover={{ borderColor: "var(--border-glow)", color: "var(--text-primary)", boxShadow: "var(--shadow-glow-blue)" }}
-          whileTap={{ scale: 0.9 }}
-        >
-          <Plus size={14} />
-        </motion.button>
-        <motion.button
-          onClick={() => zoomBy(1 / 1.25)}
-          title="Zoom out"
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{
-            background: "rgba(17, 24, 39, 0.7)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid var(--border-subtle)",
-            color: "var(--text-secondary)",
-          }}
-          whileHover={{ borderColor: "var(--border-glow)", color: "var(--text-primary)", boxShadow: "var(--shadow-glow-blue)" }}
-          whileTap={{ scale: 0.9 }}
-        >
-          <Minus size={14} />
-        </motion.button>
-        <motion.button
-          onClick={resetView}
-          title="Reset view"
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{
-            background: "rgba(17, 24, 39, 0.7)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid var(--border-subtle)",
-            color: "var(--text-secondary)",
-          }}
-          whileHover={{ borderColor: "var(--border-glow)", color: "var(--text-primary)", boxShadow: "var(--shadow-glow-blue)" }}
-          whileTap={{ scale: 0.9 }}
-        >
-          <Maximize size={14} />
-        </motion.button>
       </div>
     </div>
   );

@@ -71,10 +71,19 @@ const connectDB = async () => {
     console.log(`[DB DEBUG] Could not parse URI for DB name: ${e.message}`);
   }
 
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URL || process.env.DATABASE_URL;
+  let mongoUri = process.env.MONGODB_URI || process.env.MONGO_URL || process.env.DATABASE_URL;
 
   try {
     if (!mongoUri) {
+      // In development, avoid crashing the whole process when Mongo isn't configured.
+      // Schedule retries against a sensible local fallback and continue running.
+      if (process.env.NODE_ENV !== 'production') {
+        const fallback = 'mongodb://localhost:27017/brain_shadow_dev';
+        console.warn('[DB DEBUG] No MongoDB URI provided — scheduling retries against local fallback:', fallback);
+        logger.warn('No MongoDB URI provided; scheduling retries against local fallback');
+        scheduleLocalMongoRetry(fallback);
+        return null;
+      }
       throw new Error('Missing MongoDB connection string. Set MONGODB_URI, MONGO_URL, or DATABASE_URL.');
     }
 
