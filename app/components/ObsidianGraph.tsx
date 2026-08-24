@@ -267,6 +267,7 @@ function buildGraphData(): GraphData {
   nodeGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   nodeGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   nodeGeo.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
+  nodeGeo.setAttribute("aHi", new THREE.BufferAttribute(new Float32Array(N), 1));
 
   const linePositions = new Float32Array(edges.length * 2 * 3);
   const lineColors = new Float32Array(edges.length * 2 * 3);
@@ -346,11 +347,18 @@ function buildRingGroup(seed: () => number, ringMat: THREE.LineBasicMaterial): {
 const NODE_VERT = `
   attribute float size;
   attribute vec3 color;
+  attribute float aHi;
+  uniform float uTime;
   varying vec3 vColor;
+  varying float vHi;
+  varying float vPulse;
   void main(){
     vColor = color;
+    vHi = aHi;
+    vPulse = 0.5 - 0.5 * cos(uTime * 4.5);
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = size * (420.0 / -mvPosition.z);
+    float pulseScale = 1.0 + aHi * (0.15 + 0.30 * vPulse);
+    gl_PointSize = size * pulseScale * (420.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
   }
 `;
@@ -358,9 +366,13 @@ const NODE_VERT = `
 const NODE_FRAG = `
   uniform sampler2D pointTexture;
   varying vec3 vColor;
+  varying float vHi;
+  varying float vPulse;
   void main(){
     vec4 tex = texture2D(pointTexture, gl_PointCoord);
-    gl_FragColor = vec4(vColor, 1.0) * tex;
+    vec3 col = mix(vColor, vec3(1.0), vHi * (0.45 + 0.25 * vPulse));
+    float amp = 1.0 + vHi * (0.5 + 0.9 * vPulse);
+    gl_FragColor = vec4(col * amp, 1.0) * tex;
   }
 `;
 
@@ -478,7 +490,7 @@ function GraphScene({
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const nodeMat = new THREE.ShaderMaterial({
-      uniforms: { pointTexture: { value: data.glowTex } },
+      uniforms: { pointTexture: { value: data.glowTex }, uTime: { value: 0 } },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
       transparent: true,
@@ -513,6 +525,12 @@ function GraphScene({
     return new THREE.BufferGeometry().setFromPoints(pts);
   }, []);
   useEffect(() => () => eqGeo.dispose(), [eqGeo]);
+
+  const uTimeRef = useRef<THREE.IUniform | null>(null);
+  useEffect(() => {
+    uTimeRef.current = materials.nodeMat.uniforms.uTime ?? null;
+  }, [materials]);
+
 
   // Latest-values ref so imperative handlers always see current search state
   // without re-binding event listeners.
@@ -562,6 +580,8 @@ function GraphScene({
   useEffect(() => {
     const attr = data.nodeGeo.getAttribute("color") as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
+    const hiAttr = data.nodeGeo.getAttribute("aHi") as THREE.BufferAttribute;
+    const hiArr = hiAttr.array as Float32Array;
     for (let i = 0; i < data.nodes.length; i++) {
       const hi = hNodes.get(data.nodes[i].id);
       const rgb = hi ? hexStringToRawSrgb(hi) : null;
@@ -574,8 +594,10 @@ function GraphScene({
         arr[i * 3 + 1] = data.baseColors[i * 3 + 1];
         arr[i * 3 + 2] = data.baseColors[i * 3 + 2];
       }
+      hiArr[i] = hi ? 1 : 0;
     }
     attr.needsUpdate = true;
+    hiAttr.needsUpdate = true;
     if (!hNodes.size && hoveredIdxRef.current !== null) {
       hoveredIdxRef.current = null;
       setHighlightEdgesFor(null);
@@ -761,6 +783,8 @@ function GraphScene({
     if (!group) return;
     const t = state.clock.elapsedTime;
     const dt = Math.min(delta, 0.1);
+
+    if (uTimeRef.current) uTimeRef.current.value = t;
 
     const ease = 1 - Math.exp(-dt * 12);
     group.rotation.y += (rotYTarget.current - group.rotation.y) * ease;
