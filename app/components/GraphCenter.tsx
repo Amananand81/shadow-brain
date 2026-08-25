@@ -36,6 +36,8 @@ interface GraphCenterProps {
   sessions?: ChatSession[];
   sessionsLoading?: boolean;
   selectedAgents?: string[];
+  onNoResultsFound?: (query: string) => Promise<void>;
+  activeId?: string;
 }
 
 function fmtTime(date: Date): string {
@@ -498,7 +500,7 @@ function wordScore(text: string, word: string, stemmedWord: string, synonyms: st
 
 // ────────────────────────────────────────────────────────────────────────────
 
-export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange, onResultsPanelContentChange, panelResetKey, sessions = [], sessionsLoading = false, selectedAgents = [] }: GraphCenterProps) {
+export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange, onResultsPanelContentChange, panelResetKey, sessions = [], sessionsLoading = false, selectedAgents = [], onNoResultsFound }: GraphCenterProps) {
   // null = auto mode (show all matches); set to a nodeId when user clicks a specific node
   const [pinnedNodeId, setPinnedNodeId] = useState<number | null>(null);
   const [clickedSessions, setClickedSessions] = useState<ChatSession[]>([]);
@@ -669,6 +671,11 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
         setAiSources(result.sources);
         onAiSourcesChange?.(result.sources);
         onAiAnswerReady?.(searchKeyword.trim().toLowerCase(), result.answer);
+
+        // If no sources found, trigger LLM deep answer and add to chat
+        if (result.sources.length === 0 && onNoResultsFound) {
+          await onNoResultsFound(searchKeyword.trim());
+        }
       } catch (err) {
         console.error('[GraphCenter] search failed', err);
         if (cancelled) return;

@@ -420,6 +420,95 @@ export default function Home() {
             sessions={filteredSessions}
             sessionsLoading={sessionsLoading}
             selectedAgents={selectedAgents}
+            activeId={activeId}
+            onNoResultsFound={async (query: string) => {
+              // If no active session, create one
+              let sessionId = activeId;
+              let session = sessions.find((s) => s.id === activeId);
+              
+              if (!session) {
+                const newSession: ChatSession = {
+                  id: generateId(),
+                  title: "New conversation",
+                  messages: [],
+                  createdAt: new Date(),
+                  lastMessageAt: new Date(),
+                };
+                setSessions((prev) => [newSession, ...prev]);
+                setActiveId(newSession.id);
+                sessionId = newSession.id;
+                session = newSession;
+              }
+
+              const isFirstMessage = session.messages.length === 0;
+              const userMsg: Message = {
+                id: generateId(),
+                role: "user",
+                content: query,
+                timestamp: new Date(),
+              };
+
+              const history = [
+                ...session.messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+                { role: "user" as const, content: query },
+              ];
+
+              // Optimistically show the user message immediately
+              setSessions((prev) =>
+                prev.map((s) =>
+                  s.id !== sessionId
+                    ? s
+                    : {
+                        ...s,
+                        messages: [...s.messages, userMsg],
+                        title: isFirstMessage ? query.slice(0, 45) : s.title,
+                        lastMessageAt: new Date(),
+                      }
+                )
+              );
+
+              setIsTyping(true);
+
+              try {
+                const { content } = await sendChatMessage(history);
+
+                const aiMsg: Message = {
+                  id: generateId(),
+                  role: "assistant",
+                  content,
+                  timestamp: new Date(),
+                  graph: getMemoryGraph(query),
+                };
+
+                setSessions((prev) =>
+                  prev.map((s) =>
+                    s.id !== sessionId
+                      ? s
+                      : { ...s, messages: [...s.messages, aiMsg], lastMessageAt: new Date() }
+                  )
+                );
+
+                // Switch to chat view to show the answer
+                setCenterView("chat");
+              } catch (err) {
+                console.error("[GraphCenter] no results chat failed", err);
+                const errMsg: Message = {
+                  id: generateId(),
+                  role: "assistant",
+                  content: "Sorry, I couldn't reach the AI backend to provide a deep answer.",
+                  timestamp: new Date(),
+                };
+                setSessions((prev) =>
+                  prev.map((s) =>
+                    s.id !== sessionId
+                      ? s
+                      : { ...s, messages: [...s.messages, errMsg], lastMessageAt: new Date() }
+                  )
+                );
+              } finally {
+                setIsTyping(false);
+              }
+            }}
           />
         )}
 
