@@ -35,6 +35,8 @@ const ZOOM_FAR_Z = 820;
 
 const HI_BASE_MULTIPLIER = 2.1;
 const HI_HOVER_MULTIPLIER = 2.6;
+const SEARCH_MATCH_SIZE_MULTIPLIER = 1.8;
+const AUTO_ROTATION_SPEED = 0.06;
 
 export type ZoomLevel = "near" | "mid" | "far";
 
@@ -268,6 +270,7 @@ function buildGraphData(): GraphData {
   nodeGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   nodeGeo.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
   nodeGeo.setAttribute("aHi", new THREE.BufferAttribute(new Float32Array(N), 1));
+  nodeGeo.setAttribute("aSearchMatch", new THREE.BufferAttribute(new Float32Array(N), 1));
 
   const linePositions = new Float32Array(edges.length * 2 * 3);
   const lineColors = new Float32Array(edges.length * 2 * 3);
@@ -348,6 +351,7 @@ const NODE_VERT = `
   attribute float size;
   attribute vec3 color;
   attribute float aHi;
+  attribute float aSearchMatch;
   uniform float uTime;
   varying vec3 vColor;
   varying float vHi;
@@ -355,10 +359,13 @@ const NODE_VERT = `
   void main(){
     vColor = color;
     vHi = aHi;
-    vPulse = 0.5 - 0.5 * cos(uTime * 4.5);
+    float basePulse = 0.5 - 0.5 * cos(uTime * 1.2);
+    float hiPulse = aHi * (0.5 - 0.5 * cos(uTime * 4.5));
+    vPulse = basePulse + hiPulse;
+    float baseSize = size * (1.0 + aSearchMatch * 0.8);
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    float pulseScale = 1.0 + aHi * (0.15 + 0.30 * vPulse);
-    gl_PointSize = size * pulseScale * (420.0 / -mvPosition.z);
+    float pulseScale = 1.0 + vPulse * (0.06 + aHi * 0.30);
+    gl_PointSize = baseSize * pulseScale * (420.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
   }
 `;
@@ -371,7 +378,7 @@ const NODE_FRAG = `
   void main(){
     vec4 tex = texture2D(pointTexture, gl_PointCoord);
     vec3 col = mix(vColor, vec3(1.0), vHi * (0.45 + 0.25 * vPulse));
-    float amp = 1.0 + vHi * (0.5 + 0.9 * vPulse);
+    float amp = 1.0 + vPulse * 0.08 + vHi * (0.5 + 0.9 * vPulse);
     gl_FragColor = vec4(col * amp, 1.0) * tex;
   }
 `;
@@ -582,6 +589,8 @@ function GraphScene({
     const arr = attr.array as Float32Array;
     const hiAttr = data.nodeGeo.getAttribute("aHi") as THREE.BufferAttribute;
     const hiArr = hiAttr.array as Float32Array;
+    const smAttr = data.nodeGeo.getAttribute("aSearchMatch") as THREE.BufferAttribute;
+    const smArr = smAttr.array as Float32Array;
     for (let i = 0; i < data.nodes.length; i++) {
       const hi = hNodes.get(data.nodes[i].id);
       const rgb = hi ? hexStringToRawSrgb(hi) : null;
@@ -595,9 +604,11 @@ function GraphScene({
         arr[i * 3 + 2] = data.baseColors[i * 3 + 2];
       }
       hiArr[i] = hi ? 1 : 0;
+      smArr[i] = hi ? 1 : 0;
     }
     attr.needsUpdate = true;
     hiAttr.needsUpdate = true;
+    smAttr.needsUpdate = true;
     if (!hNodes.size && hoveredIdxRef.current !== null) {
       hoveredIdxRef.current = null;
       setHighlightEdgesFor(null);
@@ -606,6 +617,7 @@ function GraphScene({
 
   const manualTiltX = useRef(0);
   const rotYTarget = useRef(0);
+  const isDraggingRef = useRef(false);
 
   useEffect(() => {
     const cam = camRef.current;
@@ -670,6 +682,7 @@ function GraphScene({
       activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (activePointers.size === 1) {
         isDragging = true;
+        isDraggingRef.current = true;
         movedPx = 0;
         lastX = e.clientX;
         lastY = e.clientY;
@@ -713,6 +726,7 @@ function GraphScene({
       activePointers.delete(e.pointerId);
       if (activePointers.size === 0) {
         isDragging = false;
+        isDraggingRef.current = false;
         pinchStart = null;
         el.style.cursor = hoveredIdxRef.current !== null ? "pointer" : "grab";
       }
@@ -786,6 +800,10 @@ function GraphScene({
 
     if (uTimeRef.current) uTimeRef.current.value = t;
 
+    if (!liveRef.current.locked && !isDraggingRef.current) {
+      rotYTarget.current += AUTO_ROTATION_SPEED * dt;
+    }
+
     const ease = 1 - Math.exp(-dt * 12);
     group.rotation.y += (rotYTarget.current - group.rotation.y) * ease;
     group.rotation.x += ((0.18 + manualTiltX.current) - group.rotation.x) * ease;
@@ -798,6 +816,7 @@ function GraphScene({
       const isHi = hNodesRef.current.has(data.nodes[i].id);
       if (isHi) s *= i === hovered ? HI_HOVER_MULTIPLIER : HI_BASE_MULTIPLIER;
       else if (i === hovered) s *= HI_HOVER_MULTIPLIER;
+      if (isHi && i !== hovered) s *= SEARCH_MATCH_SIZE_MULTIPLIER;
       if (i !== hovered) s *= 1 + Math.sin(t * 1.4 + data.phases[i]) * 0.12;
       sizeArr[i] = s;
     }
