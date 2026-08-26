@@ -98,6 +98,17 @@ const connectDB = async () => {
         await conversations.dropIndex(legacyIndex.name);
         logger.info('Removed legacy externalId-only unique index');
       }
+
+      // Deduplicate: keep only the oldest doc per platform+externalId
+      const dups = await conversations.aggregate([
+        { $group: { _id: { platform: '$platform', externalId: '$externalId' }, ids: { $push: '$_id' }, count: { $sum: 1 } } },
+        { $match: { count: { $gt: 1 } } },
+      ]).toArray();
+      for (const g of dups) {
+        await conversations.deleteMany({ _id: { $in: g.ids.slice(1) } });
+      }
+      if (dups.length) console.log(`[DB DEBUG] Removed ${dups.length} duplicate groups`);
+
       await conversations.createIndex(
         { platform: 1, externalId: 1 },
         { unique: true, name: 'platform_1_externalId_1' }

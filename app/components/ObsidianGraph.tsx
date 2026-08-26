@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useMemo, useCallback, useEffect, useImperativeHandle, forwardRef, type ReactNode, type RefObject } from "react";
+import { useRef, useMemo, useCallback, useEffect, useImperativeHandle, forwardRef, type RefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Html, PerspectiveCamera } from "@react-three/drei";
+import { PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { motion } from "framer-motion";
 import { Plus, Minus, Maximize } from "lucide-react";
@@ -377,8 +377,8 @@ const NODE_FRAG = `
   varying float vPulse;
   void main(){
     vec4 tex = texture2D(pointTexture, gl_PointCoord);
-    vec3 col = mix(vColor, vec3(1.0), vHi * (0.45 + 0.25 * vPulse));
-    float amp = 1.0 + vPulse * 0.08 + vHi * (0.5 + 0.9 * vPulse);
+    vec3 col = mix(vColor, vec3(1.0), vHi * (0.04 + 0.06 * vPulse));
+    float amp = 1.0 + vHi * (0.10 + 0.15 * vPulse);
     gl_FragColor = vec4(col * amp, 1.0) * tex;
   }
 `;
@@ -409,53 +409,9 @@ interface SceneApi {
   resetView: () => void;
 }
 
-function DateLabels({
-  data,
-  highlightedNodes,
-  nodeDates,
-}: {
-  data: GraphData;
-  highlightedNodes: Map<number, string>;
-  nodeDates: Map<number, string>;
-}) {
-  if (highlightedNodes.size === 0 || nodeDates.size === 0) return null;
-  const out: ReactNode[] = [];
-  highlightedNodes.forEach((_color, nodeId) => {
-    const node = data.nodes[nodeId];
-    const label = nodeDates.get(nodeId);
-    if (!node || !label) return;
-    out.push(
-      <Html
-        key={nodeId}
-        position={node.pos}
-        center
-        distanceFactor={830}
-        style={{ pointerEvents: "none" }}
-      >
-        <div
-          style={{
-            background: highlightedNodes.get(nodeId)!,
-            color: "#07090f",
-            fontSize: 9,
-            fontWeight: 700,
-            padding: "2px 6px",
-            borderRadius: 4,
-            transform: "translateY(-14px)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {label}
-        </div>
-      </Html>
-    );
-  });
-  return <>{out}</>;
-}
-
 function GraphScene({
   searchKeyword,
   highlightedNodes,
-  nodeDates,
   onNodeClick,
   locked,
   onZoomLevelChange,
@@ -877,14 +833,13 @@ function GraphScene({
 
       <points geometry={data.particleGeo} material={materials.particleMat} ref={particlesRef} />
 
-      <DateLabels data={data} highlightedNodes={hNodes} nodeDates={nodeDates ?? new Map()} />
       </group>
     </>
   );
 }
 
 export const ObsidianGraph = forwardRef<ObsidianGraphHandle, ObsidianGraphProps>(function ObsidianGraph(
-  { searchKeyword, highlightedNodes, nodeDates, onNodeClick, locked, onZoomLevelChange },
+  { searchKeyword, highlightedNodes, onNodeClick, locked, onZoomLevelChange },
   ref
 ) {
   const sceneApiRef = useRef<SceneApi | null>(null);
@@ -907,7 +862,6 @@ export const ObsidianGraph = forwardRef<ObsidianGraphHandle, ObsidianGraphProps>
           <GraphScene
             searchKeyword={searchKeyword}
             highlightedNodes={highlightedNodes}
-            nodeDates={nodeDates}
             onNodeClick={onNodeClick}
             locked={locked}
             onZoomLevelChange={onZoomLevelChange}
