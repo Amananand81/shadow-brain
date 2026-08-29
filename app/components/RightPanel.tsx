@@ -1,7 +1,7 @@
 "use client";
 
 import { Search, X, Clock, Sparkles, ChevronRight, Trash2, ArrowRight } from "lucide-react";
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export interface SearchRecord {
@@ -41,6 +41,16 @@ function ordinal(n: number): string {
   return `${n}th search`;
 }
 
+// Bounded resize: the Memory Search panel starts at its original width (30% of the
+// screen, floored at 280px) and can only shrink down to the left sidebar width.
+const ORIGINAL_RATIO = 0.3;
+const LEFT_PANEL_WIDTH = 260; // matches the Chat History / left sidebar expanded width
+
+function initMaxWidth(): number {
+  if (typeof window === "undefined") return LEFT_PANEL_WIDTH;
+  return Math.max(LEFT_PANEL_WIDTH, Math.round(window.innerWidth * ORIGINAL_RATIO));
+}
+
 export function RightPanel({
   searchKeyword,
   onSearchChange,
@@ -54,6 +64,56 @@ export function RightPanel({
 }: RightPanelProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const lastCommitted = useRef<string>("");
+
+  // Bounded resize range: [LEFT_PANEL_WIDTH (min) ... ORIGINAL_WIDTH (max)].
+  // The panel starts at its original/maximum width.
+  const [bounds] = useState(() => {
+    const maxW = initMaxWidth();
+    return { min: LEFT_PANEL_WIDTH, max: maxW };
+  });
+  const [width, setWidth] = useState<number>(bounds.max);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const widthRef = useRef(width);
+
+  useEffect(() => {
+    widthRef.current = width;
+  }, [width]);
+
+  const handleResizeStart = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = widthRef.current;
+    setIsDragging(true);
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const next = Math.min(bounds.max, Math.max(bounds.min, startWidth - dx));
+      setWidth(Math.round(next));
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [bounds]);
+
+  // Prevent text selection / enforce col-resize cursor across the app while dragging.
+  useEffect(() => {
+    if (!isDragging) return;
+    const prevUserSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    return () => {
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.cursor = prevCursor;
+    };
+  }, [isDragging]);
 
   const recommendations = [...searchHistory]
     .sort((a, b) => b.lastAt - a.lastAt || b.count - a.count)
@@ -72,16 +132,42 @@ export function RightPanel({
     lastCommitted.current = "";
   }
 
+  const resizeActive = isDragging || isHovering;
+
   return (
     <div
-      className="hidden md:flex flex-col h-full flex-shrink-0"
+      className="hidden md:flex flex-col h-full flex-shrink-0 relative"
       style={{
         background: "var(--bg-panel)",
         borderLeft: "1px solid var(--border-subtle)",
-        width: "30%",
-        minWidth: 280,
+        flex: `0 0 ${width}px`,
+        minWidth: bounds.min,
       }}
     >
+      {/* Vertical resize handle on the left edge (VS Code-style) */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize"
+        onPointerDown={handleResizeStart}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+        onDoubleClick={() => setWidth(bounds.max)}
+        className="absolute inset-y-0 -left-[3px] z-20 flex items-center justify-center"
+        style={{ width: 7, cursor: "col-resize", touchAction: "none" }}
+      >
+        <div
+          className="transition-all duration-150"
+          style={{
+            width: resizeActive ? 3 : 1.5,
+            height: resizeActive ? "100%" : "30%",
+            borderRadius: 2,
+            background: resizeActive ? "rgba(79,138,255,0.9)" : "rgba(148,163,184,0.35)",
+            boxShadow: resizeActive ? "0 0 10px rgba(79,138,255,0.55)" : "none",
+          }}
+        />
+      </div>
+
       {/* Header */}
       <div className="p-4 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">

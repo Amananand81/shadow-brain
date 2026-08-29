@@ -415,7 +415,7 @@ function SearchResultsPanel({
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: sIdx * 0.05 }}
                 >
-                  <ConversationSessionCard session={session} searchKeyword={searchKeyword} filterMessagesByKeyword={true} />
+                  <ConversationSessionCard session={session} searchKeyword={searchKeyword} filterMessagesByKeyword={false} />
                 </motion.div>
               ))}
             </div>
@@ -562,42 +562,34 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
 
     return sessions
       .map(s => {
-        const platformLabel = (s.platform ? PLATFORM_LABELS[s.platform] ?? s.platform : "").toLowerCase();
-        const title    = s.title.toLowerCase();
-        const kwText   = (s.keywords ?? []).join(" ").toLowerCase();
-        const topic    = (s.topic ?? "").toLowerCase();
-        const summary  = (s.summary ?? "").toLowerCase();
-        const category = (s.category ?? "").toLowerCase();
-        const msgs     = s.messages.map(m => m.content).join(" ").toLowerCase();
+        // Matching (and therefore node highlighting/blinking) is based ONLY on
+        // the USER's actual messages. Assistant responses, titles, summaries,
+        // keywords, topics, categories and platform labels are deliberately
+        // excluded so a keyword that only appears in an AI answer or in
+        // metadata never lights up a conversation.
+        const userText = s.messages
+          .filter(m => m.role === "user")
+          .map(m => m.content)
+          .join(" ")
+          .toLowerCase();
 
         let score = 0;
         let matched = 0;
 
-        // Bonus for full phrase appearing anywhere
-        if (rawWords.length > 1) {
-          if (title.includes(fullPhrase))   score += 30;
-          if (topic.includes(fullPhrase))   score += 25;
-          if (summary.includes(fullPhrase)) score += 18;
-          if (msgs.includes(fullPhrase))    score += 12;
+        // Bonus for the full phrase appearing anywhere within the user's messages
+        if (rawWords.length > 1 && userText.includes(fullPhrase)) {
+          score += 40;
         }
 
-        // Per-word scoring with stemming + synonyms
+        // Per-word scoring with stemming + synonyms, against USER messages only.
         for (let i = 0; i < rawWords.length; i++) {
           const word = rawWords[i];
           const sw   = stemmedRaw[i];
           const syns = synonymsRaw[i];
 
-          const ts  = wordScore(title,         word, sw, syns);
-          const ks  = wordScore(kwText,        word, sw, syns);
-          const ps  = wordScore(topic,         word, sw, syns);
-          const ss  = wordScore(summary,       word, sw, syns);
-          const cs  = wordScore(category,      word, sw, syns);
-          const pls = wordScore(platformLabel, word, sw, syns);
-          const ms  = wordScore(msgs,          word, sw, syns);
-
-          const best = Math.max(ts, ks, ps, ss, cs, pls, ms);
+          const best = wordScore(userText, word, sw, syns);
           if (best > 0) {
-            score   += ts * 10 + ks * 8 + ps * 7 + ss * 5 + cs * 4 + pls * 3 + ms * 1;
+            score   += best * 20;
             matched += best; // fractional credit for partial/synonym matches
           }
         }

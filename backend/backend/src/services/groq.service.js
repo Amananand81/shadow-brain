@@ -57,7 +57,7 @@ class GroqService {
     const response = await this.chatClient.chat.completions.create({
       model:       config.model,
       messages:    allMessages,
-      max_tokens:  2048,
+      max_tokens:  3000,
       temperature: 0.7,
     });
 
@@ -70,8 +70,23 @@ class GroqService {
   async extractMetadata(conversationText) {
     const prompt = `Extract metadata from this conversation. Reply with ONLY valid JSON, no markdown, no explanation.
 
+The summary field must be a single continuous paragraph (no line breaks, no lists, no bullets). Write it as a natural, flowing description of the actual discussion.
+
+What to capture in the summary:
+- What the user was trying to learn, accomplish, or understand
+- What the AI/agent explained, suggested, or helped with
+- Important solutions, decisions, or conclusions reached
+- How the conversation progressed from start to finish
+
+What to avoid:
+- Listing questions or topics separated by commas or semicolons
+- Repeating conversation titles or user phrasing verbatim
+- Generic descriptions like "discussed various topics" or "asked several questions"
+- Numbered lists, bullet points, or any structured formatting
+- Mentioning how many messages were exchanged
+
 JSON format:
-{"topic":"3-8 word topic","category":"Technical|Business|Education|Creative|Troubleshooting|Question|Research|Planning|Implementation|Review|Other","summary":"50-100 word summary","keywords":["kw1","kw2"],"entities":["entity1"],"importance_score":1}
+{"topic":"3-8 word topic","category":"Technical|Business|Education|Creative|Troubleshooting|Question|Research|Planning|Implementation|Review|Other","summary":"Single continuous paragraph describing the actual discussion","keywords":["kw1","kw2"],"entities":["entity1"],"importance_score":1}
 
 importance_score: 1=casual, 2=simple question, 3=useful info, 4=project work, 5=highly valuable
 

@@ -30,8 +30,23 @@ function isRateLimit(msg = '') {
 function buildPrompt(text) {
   return `Extract metadata from this conversation. Reply with ONLY valid JSON, no markdown, no explanation.
 
+The summary field must be a single continuous paragraph (no line breaks, no lists, no bullets). Write it as a natural, flowing description of the actual discussion.
+
+What to capture in the summary:
+- What the user was trying to learn, accomplish, or understand
+- What the AI/agent explained, suggested, or helped with
+- Important solutions, decisions, or conclusions reached
+- How the conversation progressed from start to finish
+
+What to avoid:
+- Listing questions or topics separated by commas or semicolons
+- Repeating conversation titles or user phrasing verbatim
+- Generic descriptions like "discussed various topics" or "asked several questions"
+- Numbered lists, bullet points, or any structured formatting
+- Mentioning how many messages were exchanged
+
 JSON format:
-{"topic":"3-8 word topic","category":"Technical|Business|Education|Creative|Troubleshooting|Question|Research|Planning|Implementation|Review|Other","summary":"50-100 word summary","keywords":["kw1","kw2"],"entities":["entity1"],"importance_score":1}
+{"topic":"3-8 word topic","category":"Technical|Business|Education|Creative|Troubleshooting|Question|Research|Planning|Implementation|Review|Other","summary":"Single continuous paragraph describing the actual discussion","keywords":["kw1","kw2"],"entities":["entity1"],"importance_score":1}
 
 importance_score: 1=casual, 2=simple question, 3=useful info, 4=project work, 5=highly valuable
 
@@ -55,6 +70,7 @@ async function extractWithCerebras(text) {
 function localEnrich(conversation) {
   const messages = conversation.messages || [];
   const userMsgs = messages.filter(m => m.role === 'user');
+  const aiMsgs = messages.filter(m => m.role === 'assistant' || m.role !== 'user');
   const firstUser = userMsgs[0]?.content || conversation.title || '';
 
   const topic = firstUser.split(/\s+/).slice(0, 8).join(' ').slice(0, 80) || 'General Conversation';
@@ -67,10 +83,32 @@ function localEnrich(conversation) {
   const techWords = ['code', 'function', 'error', 'bug', 'api', 'database', 'python', 'javascript', 'react', 'server', 'deploy', 'git', 'css', 'html', 'sql', 'debug'];
   const category = techWords.some(w => allText.toLowerCase().includes(w)) ? 'Technical' : 'Other';
 
+  // Build a single-paragraph summary from conversation content
+  let summary;
+  if (userMsgs.length === 0) {
+    summary = topic;
+  } else if (userMsgs.length === 1) {
+    const aiSnippet = aiMsgs[0]?.content?.slice(0, 120) || '';
+    summary = aiSnippet
+      ? `The user asked about ${firstUser.slice(0, 120)} and received a response covering ${aiSnippet}...`
+      : `The user discussed ${firstUser.slice(0, 200)}.`;
+  } else {
+    // Multiple messages - build a flowing paragraph
+    const opening = firstUser.slice(0, 100);
+    const laterTopics = userMsgs.slice(1, 3).map(m => m.content.slice(0, 60)).join(', ');
+    const aiSummary = aiMsgs.length > 0
+      ? ` The AI responded to these questions and provided explanations and guidance throughout the discussion.`
+      : '';
+    summary = `The user started by asking about ${opening}`;
+    if (laterTopics) summary += ` and then explored ${laterTopics}`;
+    summary += `.${aiSummary}`;
+    summary = summary.slice(0, 250);
+  }
+
   return {
     topic,
     category,
-    summary:            firstUser.slice(0, 200) || topic,
+    summary,
     keywords,
     entities:           [],
     importance_score:   3,
