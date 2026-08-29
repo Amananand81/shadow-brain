@@ -118,6 +118,31 @@ const connectDB = async () => {
       console.log(`[DB DEBUG] No conversations collection yet — will be created on first insert`);
     }
 
+    // ── Migration: Fix users index so Clerk-only accounts (no googleId)
+    //    and Google-linked accounts can coexist. The googleId unique index
+    //    created before sparse existed is NOT sparse, which makes the second
+    //    Clerk account (googleId missing) collide with E11000 duplicate null.
+    //    Rebuild it as sparse to match the schema.
+    const userCollectionExists = collections.some(c => c.name === 'users');
+    if (userCollectionExists) {
+      const users = conn.connection.collection('users');
+      const userIndexes = await users.indexes();
+      const googleIdx = userIndexes.find(idx => idx.unique && idx.key.googleId === 1);
+      if (googleIdx && !googleIdx.sparse) {
+        await users.dropIndex(googleIdx.name);
+        console.log(`[DB DEBUG] Dropped non-sparse unique index "${googleIdx.name}" on users.googleId`);
+      }
+      const clerkIdx = userIndexes.find(idx => idx.unique && idx.key.clerkUserId === 1);
+      if (clerkIdx && !clerkIdx.sparse) {
+        await users.dropIndex(clerkIdx.name);
+        console.log(`[DB DEBUG] Dropped non-sparse unique index "${clerkIdx.name}" on users.clerkUserId`);
+      }
+      // Recreate both as sparse-unique (standard names so Mongoose ensureIndexes is a no-op)
+      await users.createIndex({ googleId: 1 }, { unique: true, sparse: true, name: 'googleId_1' });
+      await users.createIndex({ clerkUserId: 1 }, { unique: true, sparse: true, name: 'clerkUserId_1' });
+      console.log(`[DB DEBUG] Users index migration completed`);
+    }
+
     logger.info(`MongoDB Connected: ${actualHost} | Database: "${actualDb}"`);
 
     mongoose.connection.on('disconnected', () => {

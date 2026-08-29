@@ -198,6 +198,49 @@ export async function googleLogin(credential: string): Promise<GoogleAuthUser> {
   return { token: '', user: { email, name, avatar } };
 }
 
+// Exchange a Clerk session token (short-lived) for the same Brain Shadow JWT
+// used by Google login. The backend verifies the Clerk token, upserts the
+// application user, and returns a Brain Shadow JWT that downstream
+// /api/conversations + /api/import (and the browser extension) expect.
+export async function clerkLogin(clerkToken: string): Promise<GoogleAuthUser> {
+  if (!clerkToken) throw new Error("No Clerk session available. Please try again.");
+
+  const res = await fetch(toApiUrl('/api/auth/clerk'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ token: clerkToken }),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const msg = data?.message || `Sign-in failed (${res.status})`;
+    throw new Error(msg);
+  }
+
+  if (data?.user?.email && data?.token) {
+    return { token: data.token, user: data.user };
+  }
+  if (data?.email && data?.token) {
+    return { token: data.token, user: { email: data.email, name: data.name, avatar: data.avatar } };
+  }
+
+  // Cookie-only fallback (same as Google path).
+  const meRes = await fetch(toApiUrl('/api/auth/me'), { credentials: 'include' });
+  const meBody = await meRes.json().catch(() => null);
+  if (meRes.ok && meBody?.token) {
+    return {
+      token: meBody.token,
+      user: { email: meBody.email || data?.email || '', name: meBody.name || data?.name, avatar: meBody.avatar || data?.avatar },
+    };
+  }
+
+  const email = data?.email || data?.user?.email || '';
+  if (!email) throw new Error(`Unexpected server response: ${JSON.stringify(data)}`);
+  return { token: '', user: { email, name: data?.name || data?.user?.name, avatar: data?.avatar || data?.user?.avatar } };
+}
+
 export async function saveConversation(data: {
   external_id: string;
   platform: string;

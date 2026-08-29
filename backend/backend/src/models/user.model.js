@@ -4,8 +4,20 @@ const userSchema = new mongoose.Schema(
   {
     googleId: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true,
+      index: true,
+    },
+    clerkUserId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+    authMethod: {
+      type: String,
+      enum: ['google', 'clerk'],
+      default: 'google',
       index: true,
     },
     email: {

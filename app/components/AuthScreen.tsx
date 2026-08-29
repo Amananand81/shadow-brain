@@ -1,32 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Mail, Lock, Eye, EyeOff, AlertCircle, Check,
-  Loader2, KeyRound, ArrowLeft, ShieldCheck,
+  Loader2, KeyRound, ShieldCheck, MessageSquareWarning, ArrowLeft,
 } from "lucide-react";
+import { useSignUp, useSignIn, useAuth } from "@clerk/nextjs";
 import { Logo } from "./Logo";
 import { GoogleSignInButton } from "./GoogleSignInButton";
-import {
-  checkPassword,
-  isEmailValid,
-  login,
-  signUp,
-  requestPasswordReset,
-  resetPassword,
-  saveRememberMe,
-  clearRememberMe,
-  getSavedEmail,
-  setSession,
-} from "@/app/lib/auth";
-import { googleLogin } from "@/app/lib/api";
+import { isEmailValid, checkPassword } from "@/app/lib/auth";
+import { clerkLogin, googleLogin } from "@/app/lib/api";
 
 interface AuthScreenProps {
   onAuthenticated: (email: string) => void;
 }
 
-type Mode = "login" | "signup" | "forgot" | "reset";
+type Mode = "login" | "signup" | "forgot";
+type SignupStage = "email" | "otp" | "password";
 
 function RuleRow({ met, label }: { met: boolean; label: string }) {
   return (
@@ -98,142 +89,278 @@ function InputRow({
 }
 
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
+  const { signUp } = useSignUp();
+  const { signIn } = useSignIn();
+  const { getToken } = useAuth();
+
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Forgot/reset flow
-  const [resetEmail, setResetEmail] = useState("");
+  // Sign-up multi-step stage + status text
+  const [signupStage, setSignupStage] = useState<SignupStage>("email");
+  const [otpStatus, setOtpStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [signupStatus, setSignupStatus] = useState<string | null>(null);
+
+  // Forgot-password flow
+  const [sendResetEmail, setSendResetEmail] = useState("");
   const [resetCode, setResetCode] = useState("");
-  const [simulatedCode, setSimulatedCode] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [resetSuccess, setResetSuccess] = useState(false);
-
-  // Load saved email on mount
-  useEffect(() => {
-    const saved = getSavedEmail();
-    if (saved) {
-      setEmail(saved);
-      setRememberMe(true);
-    }
-  }, []);
+  const [resetStep, setResetStep] = useState<"request" | "code" | "newPassword">("request");
+  const [resetEmailUsed, setResetEmailUsed] = useState("");
 
   const rules = checkPassword(password);
   const newRules = checkPassword(newPassword);
   const emailLooksValid = email.length === 0 || isEmailValid(email);
 
-  // ── Main login/signup submit ─────────────────────────────────────────────
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const result =
-      mode === "login"
-        ? await login(email, password)
-        : await signUp(email, password, confirmPassword);
-
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-
-    if (rememberMe) {
-      saveRememberMe(result.email);
-    } else {
-      clearRememberMe();
-    }
-
-    onAuthenticated(result.email);
-  }
-
-  // ── Google sign-in ───────────────────────────────────────────────────────
+  // ── Google sign-in (unchanged) ─────────────────────────────────────────────
   async function handleGoogleCredential(credential: string) {
     setError(null);
     setLoading(true);
     try {
       const res = await googleLogin(credential);
-
-      // ── STEP 1: Log complete response from googleLogin() ──
-      console.log(`[JWT-STEP-1] ═══ Google Login Response ═══`);
-      console.log(`[JWT-STEP-1]   email:    ${res.user?.email}`);
-      console.log(`[JWT-STEP-1]   name:     ${res.user?.name}`);
-      console.log(`[JWT-STEP-1]   token:    ${res.token ? 'PRESENT' : 'MISSING'}`);
-      console.log(`[JWT-STEP-1]   token type: ${typeof res.token}`);
-      console.log(`[JWT-STEP-1]   token is empty string: ${res.token === ''}`);
-      console.log(`[JWT-STEP-1]   token length: ${res.token?.length ?? 0}`);
-      console.log(`[JWT-STEP-1]   token preview: ${res.token ? res.token.slice(0, 40) + '...' : 'N/A'}`);
-      console.log(`[JWT-STEP-1]   token full: ${JSON.stringify(res.token)}`);
-      if (!res.token) {
-        console.error(`[JWT-STEP-1] ❌ FAIL — Token is missing/empty from googleLogin(). The backend returned it but the frontend could not extract it.`);
-      } else {
-        console.log(`[JWT-STEP-1] ✅ PASS — Token received from googleLogin()`);
+      if (res.token) {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("shadowbrain_token", res.token);
+        }
       }
-
-      setSession(res.user.email, res.token);
-
-      // ── STEP 2: Verify localStorage after setSession() ──
-      const storedAfter = localStorage.getItem('shadowbrain_token');
-      console.log(`[JWT-STEP-2] ═══ After setSession() — localStorage check ═══`);
-      console.log(`[JWT-STEP-2]   localStorage value: ${storedAfter ? 'PRESENT' : 'MISSING'}`);
-      console.log(`[JWT-STEP-2]   type: ${typeof storedAfter}`);
-      console.log(`[JWT-STEP-2]   is empty: ${storedAfter === ''}`);
-      console.log(`[JWT-STEP-2]   length: ${storedAfter?.length ?? 0}`);
-      console.log(`[JWT-STEP-2]   preview: ${storedAfter ? storedAfter.slice(0, 40) + '...' : 'N/A'}`);
-      console.log(`[JWT-STEP-2]   full: ${JSON.stringify(storedAfter)}`);
-      if (!storedAfter) {
-        console.error(`[JWT-STEP-2] ❌ FAIL — localStorage has NO token after setSession(). setSession() received token=${JSON.stringify(res.token)}`);
-        console.error(`[JWT-STEP-2]   This means setSession() treated the token as falsy and REMOVED it.`);
-      } else {
-        console.log(`[JWT-STEP-2] ✅ PASS — Token stored in localStorage`);
-      }
-
       onAuthenticated(res.user.email);
     } catch (err) {
-      console.error(`[JWT-STEP-1] ❌ FAIL — googleLogin() threw: ${err instanceof Error ? err.message : String(err)}`);
-      console.error("[GoogleSignIn]", err);
       setError(err instanceof Error ? err.message : "Google sign-in failed. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
-  // ── Forgot password — request code ──────────────────────────────────────
+  // ── Exchange the active Clerk session for a Brain Shadow JWT ───────────────
+  async function finalizeSession(expectedEmail: string) {
+    const token = (await getToken()) as string;
+    if (!token) throw new Error("Could not obtain a session token. Please try again.");
+    const res = await clerkLogin(token);
+    onAuthenticated(res.user.email || expectedEmail);
+  }
+
+  // ── Login (email + password, no OTP) ──────────────────────────────────────
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!signIn) {
+      setError("Sign-in is not ready yet. Please try again.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await signIn.password({ emailAddress: email.trim(), password });
+      if (res.error) {
+        setError(res.error.message || "Invalid email or password.");
+        return;
+      }
+      if (signIn.status === "complete" && signIn.createdSessionId) {
+        await signIn.finalize();
+        await finalizeSession(email);
+      } else {
+        setError("Sign-in could not be completed. Please try again.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Sign-up step 1: email → send OTP ──────────────────────────────────────
+  async function handleSignupEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!signUp) {
+      setError("Sign-up is not ready yet. Please try again.");
+      return;
+    }
+    if (!isEmailValid(email.trim())) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    setLoading(true);
+    setOtpStatus("sending");
+    try {
+      const createRes = await signUp.create({ emailAddress: email.trim().toLowerCase() });
+      if (createRes.error) {
+        setOtpStatus("error");
+        setError(createRes.error.message || "Could not start sign-up.");
+        return;
+      }
+      const sendRes = await signUp.verifications.sendEmailCode();
+      if (sendRes.error) {
+        setOtpStatus("error");
+        setError(sendRes.error.message || "Could not send the verification code.");
+        return;
+      }
+      setOtpStatus("sent");
+      setSignupStage("otp");
+      setSignupStatus("OTP sent to your email");
+    } catch (err) {
+      setOtpStatus("error");
+      setError(err instanceof Error ? err.message : "Could not send the verification code.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Sign-up step 2: verify OTP ────────────────────────────────────────────
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!signUp) return;
+    setLoading(true);
+    try {
+      const verifyRes = await signUp.verifications.verifyEmailCode({ code: otp.trim() });
+      if (verifyRes.error) {
+        setError(verifyRes.error.message || "Invalid or expired code. Please try again.");
+        return;
+      }
+      const emailVerified = signUp.verifications?.emailAddress?.status === "verified";
+      if (!emailVerified) {
+        setError("Email could not be verified. Please check the code.");
+        return;
+      }
+      setSignupStatus("Email verified");
+      setSignupStage("password");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid or expired code.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Sign-up step 3: password + confirm → create account ───────────────────
+  async function handleCreateAccount(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (!signUp) return;
+    setLoading(true);
+    setSignupStatus("Creating account...");
+    try {
+      const pwRes = await signUp.password({ emailAddress: email.trim().toLowerCase(), password });
+      if (pwRes.error) {
+        setSignupStatus(null);
+        setError(pwRes.error.message || "Password could not be set.");
+        return;
+      }
+      if (signUp.status !== "complete" || !signUp.createdSessionId) {
+        setSignupStatus(null);
+        setError("Account could not be finalized. Please try again.");
+        return;
+      }
+      await signUp.finalize();
+      setSignupStatus("Account created");
+      await finalizeSession(email);
+    } catch (err) {
+      setSignupStatus(null);
+      setError(err instanceof Error ? err.message : "Could not create your account.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Resend sign-up OTP ────────────────────────────────────────────────────
+  async function handleResendOtp() {
+    setError(null);
+    if (!signUp) return;
+    setLoading(true);
+    setOtpStatus("sending");
+    try {
+      const res = await signUp.verifications.sendEmailCode();
+      if (res.error) {
+        setOtpStatus("error");
+        setError(res.error.message || "Could not resend the code.");
+        return;
+      }
+      setOtpStatus("sent");
+    } catch (err) {
+      setOtpStatus("error");
+      setError(err instanceof Error ? err.message : "Could not resend the code.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Forgot password: send reset code ─────────────────────────────────────
   async function handleForgotRequest(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!signIn) return;
     setLoading(true);
-    const result = await requestPasswordReset(resetEmail);
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    try {
+      const createRes = await signIn.create({ identifier: sendResetEmail.trim() });
+      if (createRes.error) {
+        setError(createRes.error.message || "Could not start password reset.");
+        return;
+      }
+      const sendRes = await signIn.resetPasswordEmailCode.sendCode();
+      if (sendRes.error) {
+        setError(sendRes.error.message || "Could not send the reset code.");
+        return;
+      }
+      setResetEmailUsed(sendResetEmail.trim());
+      setResetStep("code");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the reset code.");
+    } finally {
+      setLoading(false);
     }
-    // Show simulated code in a banner (in real app this would be an email)
-    setSimulatedCode(result.code);
-    setMode("reset");
   }
 
-  // ── Reset password — verify code + set new password ─────────────────────
+  // ── Forgot password: verify code + set new password ──────────────────────
   async function handleResetSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
-    const result = await resetPassword(resetEmail, resetCode, newPassword, confirmNewPassword);
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error);
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords do not match.");
       return;
     }
-    setResetSuccess(true);
+    if (!signIn) return;
+    setLoading(true);
+    try {
+      if (resetStep === "code") {
+        const verifyRes = await signIn.resetPasswordEmailCode.verifyCode({ code: resetCode.trim() });
+        if (verifyRes.error) {
+          setError(verifyRes.error.message || "Invalid or expired reset code.");
+          return;
+        }
+        if (signIn.status !== "needs_new_password") {
+          setError("The reset code could not be verified. Please try again.");
+          return;
+        }
+        setResetStep("newPassword");
+        return;
+      }
+      const submitRes = await signIn.resetPasswordEmailCode.submitPassword({ password: newPassword });
+      if (submitRes.error) {
+        setError(submitRes.error.message || "Could not reset your password.");
+        return;
+      }
+      if (signIn.status === "complete") {
+        await signIn.finalize();
+        await finalizeSession(resetEmailUsed);
+      } else {
+        setError("Password reset could not be completed. Please try again.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reset your password.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function switchMode(next: Mode) {
@@ -241,11 +368,15 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     setError(null);
     setPassword("");
     setConfirmPassword("");
-    setSimulatedCode(null);
+    setOtp("");
+    setOtpStatus("idle");
+    setSignupStage("email");
+    setSignupStatus(null);
     setResetCode("");
     setNewPassword("");
     setConfirmNewPassword("");
-    setResetSuccess(false);
+    setResetStep("request");
+    setSendResetEmail(email || "");
   }
 
   const eyeBtn = (show: boolean, toggle: () => void) => (
@@ -271,7 +402,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       />
 
       <motion.div
-        key={mode}
+        key={mode + (mode === "signup" ? signupStage : "")}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
@@ -286,10 +417,9 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           <Logo />
         </div>
 
-        {/* ── Forgot / Reset screens ────────────────────────────────────── */}
-        {(mode === "forgot" || mode === "reset") && (
+        {/* ── Forgot password screen ───────────────────────────────────── */}
+        {mode === "forgot" && (
           <>
-            {/* Back button */}
             <button
               type="button"
               onClick={() => switchMode("login")}
@@ -303,141 +433,85 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             <div className="flex items-center gap-2 mb-5">
               <KeyRound size={18} style={{ color: "var(--blue)" }} />
               <h2 className="text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
-                {mode === "forgot" ? "Reset your password" : "Enter reset code"}
+                Reset your password
               </h2>
             </div>
 
-            {/* ── Step 1: request code ─────────────────────────────────── */}
-            {mode === "forgot" && (
+            {resetStep === "request" && (
               <form onSubmit={handleForgotRequest} className="flex flex-col gap-3.5">
                 <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                  Enter your account email and we&apos;ll generate a reset code for you.
+                  Enter your account email and we&apos;ll send you a reset code.
                 </p>
-
                 <InputRow
                   icon={Mail}
                   label="Email address"
                   type="email"
-                  value={resetEmail}
-                  onChange={setResetEmail}
+                  value={sendResetEmail}
+                  onChange={setSendResetEmail}
                   placeholder="you@example.com"
                   autoComplete="email"
                 />
-
-                <AnimatePresence>
-                  {error && <ErrorBanner message={error} />}
-                </AnimatePresence>
-
+                <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
                 <SubmitButton loading={loading} label="Send reset code" />
               </form>
             )}
 
-            {/* ── Step 2: enter code + new password ───────────────────── */}
-            {mode === "reset" && (
-              <>
-                {/* Simulated email banner */}
-                {simulatedCode && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-col gap-1 px-3 py-2.5 rounded-xl mb-4 text-[11.5px]"
-                    style={{
-                      background: "rgba(52,211,153,0.08)",
-                      border: "1px solid rgba(52,211,153,0.25)",
-                      color: "#34d399",
-                    }}
-                  >
-                    <div className="flex items-center gap-1.5 font-semibold">
-                      <ShieldCheck size={13} />
-                      Simulated email (no backend)
-                    </div>
-                    <span style={{ color: "var(--text-secondary)" }}>
-                      Your reset code:{" "}
-                      <span className="font-mono font-bold tracking-widest" style={{ color: "#34d399" }}>
-                        {simulatedCode}
-                      </span>
-                    </span>
-                  </motion.div>
+            {resetStep === "code" && (
+              <form onSubmit={handleResetSubmit} className="flex flex-col gap-3.5">
+                <div className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[11.5px]" style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
+                  <ShieldCheck size={13} className="flex-shrink-0" />
+                  A reset code was sent to {resetEmailUsed}
+                </div>
+                <InputRow
+                  icon={KeyRound}
+                  label="6-digit reset code"
+                  type="text"
+                  value={resetCode}
+                  onChange={setResetCode}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                />
+                <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
+                <SubmitButton loading={loading} label="Verify code" />
+              </form>
+            )}
+
+            {resetStep === "newPassword" && (
+              <form onSubmit={handleResetSubmit} className="flex flex-col gap-3.5">
+                <div className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[11.5px]" style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
+                  <Check size={13} className="flex-shrink-0" />
+                  Code verified — set a new password
+                </div>
+                <InputRow
+                  icon={Lock}
+                  label="New password"
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={setNewPassword}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  rightEl={eyeBtn(showNewPassword, () => setShowNewPassword((v) => !v))}
+                />
+                <InputRow
+                  icon={Lock}
+                  label="Confirm new password"
+                  type={showNewPassword ? "text" : "password"}
+                  value={confirmNewPassword}
+                  onChange={setConfirmNewPassword}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                />
+                {newPassword.length > 0 && (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2.5 rounded-xl" style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}>
+                    <RuleRow met={newRules.minLength} label="8+ characters" />
+                    <RuleRow met={newRules.hasLetter} label="A letter" />
+                    <RuleRow met={newRules.hasNumber} label="A number" />
+                    <RuleRow met={newRules.hasSymbol} label="A symbol" />
+                  </div>
                 )}
-
-                {resetSuccess ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="flex flex-col items-center gap-3 py-4 text-center"
-                  >
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center"
-                      style={{ background: "rgba(52,211,153,0.15)", border: "1px solid #34d399" }}
-                    >
-                      <Check size={20} color="#34d399" />
-                    </div>
-                    <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
-                      Password updated! You can now log in.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => switchMode("login")}
-                      className="text-[12.5px] font-medium"
-                      style={{ color: "var(--blue)" }}
-                    >
-                      Go to login →
-                    </button>
-                  </motion.div>
-                ) : (
-                  <form onSubmit={handleResetSubmit} className="flex flex-col gap-3.5">
-                    <InputRow
-                      icon={KeyRound}
-                      label="6-digit reset code"
-                      type="text"
-                      value={resetCode}
-                      onChange={setResetCode}
-                      placeholder="123456"
-                      autoComplete="one-time-code"
-                    />
-
-                    <InputRow
-                      icon={Lock}
-                      label="New password"
-                      type={showNewPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={setNewPassword}
-                      placeholder="••••••••"
-                      autoComplete="new-password"
-                      rightEl={eyeBtn(showNewPassword, () => setShowNewPassword((v) => !v))}
-                    />
-
-                    <InputRow
-                      icon={Lock}
-                      label="Confirm new password"
-                      type={showNewPassword ? "text" : "password"}
-                      value={confirmNewPassword}
-                      onChange={setConfirmNewPassword}
-                      placeholder="••••••••"
-                      autoComplete="new-password"
-                    />
-
-                    {/* password rules */}
-                    {newPassword.length > 0 && (
-                      <div
-                        className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2.5 rounded-xl"
-                        style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
-                      >
-                        <RuleRow met={newRules.minLength} label="8+ characters" />
-                        <RuleRow met={newRules.hasLetter} label="A letter" />
-                        <RuleRow met={newRules.hasNumber} label="A number" />
-                        <RuleRow met={newRules.hasSymbol} label="A symbol" />
-                      </div>
-                    )}
-
-                    <AnimatePresence>
-                      {error && <ErrorBanner message={error} />}
-                    </AnimatePresence>
-
-                    <SubmitButton loading={loading} label="Reset password" />
-                  </form>
-                )}
-              </>
+                <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
+                <SubmitButton loading={loading} label="Reset password" />
+              </form>
             )}
           </>
         )}
@@ -475,105 +549,143 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               <div className="flex-1 h-px" style={{ background: "var(--border-subtle)" }} />
             </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-              {/* Email */}
-              <InputRow
-                icon={Mail}
-                label="Email"
-                type="email"
-                value={email}
-                onChange={setEmail}
-                placeholder="you@example.com"
-                autoComplete="email"
-                invalid={!emailLooksValid}
-              />
+            {/* ── LOGIN form ───────────────────────────────────────────── */}
+            {mode === "login" && (
+              <form onSubmit={handleLogin} className="flex flex-col gap-3.5">
+                <InputRow
+                  icon={Mail}
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  invalid={!emailLooksValid}
+                />
+                <InputRow
+                  icon={Lock}
+                  label="Password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={setPassword}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  rightEl={eyeBtn(showPassword, () => setShowPassword((v) => !v))}
+                />
 
-              {/* Password */}
-              <InputRow
-                icon={Lock}
-                label="Password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={setPassword}
-                placeholder="••••••••"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                rightEl={eyeBtn(showPassword, () => setShowPassword((v) => !v))}
-              />
-
-              {/* Confirm password + rule checklist (signup only) */}
-              <AnimatePresence mode="wait">
-                {mode === "signup" && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="flex flex-col gap-3.5 overflow-hidden"
-                  >
-                    <InputRow
-                      icon={Lock}
-                      label="Confirm password"
-                      type={showPassword ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={setConfirmPassword}
-                      placeholder="••••••••"
-                      autoComplete="new-password"
-                    />
-
-                    <div
-                      className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2.5 rounded-xl"
-                      style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
-                    >
-                      <RuleRow met={rules.minLength} label="8+ characters" />
-                      <RuleRow met={rules.hasLetter} label="A letter" />
-                      <RuleRow met={rules.hasNumber} label="A number" />
-                      <RuleRow met={rules.hasSymbol} label="A symbol" />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Remember me + Forgot password row */}
-              <div className="flex items-center justify-between mt-0.5">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <div
-                    onClick={() => setRememberMe((v) => !v)}
-                    className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all"
-                    style={{
-                      background: rememberMe ? "var(--accent-gradient)" : "var(--bg-surface)",
-                      border: `1px solid ${rememberMe ? "transparent" : "var(--border-subtle)"}`,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {rememberMe && <Check size={10} color="white" />}
-                  </div>
-                  <span className="text-[11.5px]" style={{ color: "var(--text-secondary)" }}>
-                    {mode === "login" ? "Remember me" : "Save login info"}
-                  </span>
-                </label>
-
-                {mode === "login" && (
+                <div className="flex items-center justify-between mt-0.5">
+                  <span className="text-[11.5px]" style={{ color: "var(--text-secondary)" }}>Welcome back</span>
                   <button
                     type="button"
-                    onClick={() => { setResetEmail(email); switchMode("forgot"); }}
+                    onClick={() => switchMode("forgot")}
                     className="text-[11.5px] font-medium"
                     style={{ color: "var(--blue)" }}
                   >
                     Forgot password?
                   </button>
-                )}
-              </div>
+                </div>
 
-              {/* Error */}
-              <AnimatePresence>
-                {error && <ErrorBanner message={error} />}
-              </AnimatePresence>
+                <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
+                <SubmitButton loading={loading} label="Log in" />
+              </form>
+            )}
 
-              <SubmitButton
-                loading={loading}
-                label={mode === "login" ? "Log in" : "Create account"}
-              />
-            </form>
+            {/* ── SIGNUP flow (email → OTP → password) ─────────────────── */}
+            {mode === "signup" && signupStage === "email" && (
+              <form onSubmit={handleSignupEmail} className="flex flex-col gap-3.5">
+                <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                  We&apos;ll send a one-time code to verify your email.
+                </p>
+                <InputRow
+                  icon={Mail}
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  invalid={!emailLooksValid}
+                />
+                <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
+                <SubmitButton loading={loading} label="Continue" />
+              </form>
+            )}
+
+            {mode === "signup" && signupStage === "otp" && (
+              <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3.5">
+                <StatusBanner
+                  icon={otpStatus === "error" ? MessageSquareWarning : ShieldCheck}
+                  tone={otpStatus === "error" ? "error" : "success"}
+                  text={otpStatus === "sending" ? "Sending OTP..." : otpStatus === "sent" ? `OTP sent to ${email}` : signupStatus || "Enter the code from your email"}
+                />
+                <InputRow
+                  icon={KeyRound}
+                  label="Verification code"
+                  type="text"
+                  value={otp}
+                  onChange={setOtp}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                />
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={loading}
+                    className="text-[11.5px] font-medium"
+                    style={{ color: "var(--blue)" }}
+                  >
+                    Resend code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setSignupStage("email"); setOtpStatus("idle"); setError(null); }}
+                    className="text-[11.5px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Change email
+                  </button>
+                </div>
+                <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
+                <SubmitButton loading={loading} label="Verify OTP" />
+              </form>
+            )}
+
+            {mode === "signup" && signupStage === "password" && (
+              <form onSubmit={handleCreateAccount} className="flex flex-col gap-3.5">
+                <StatusBanner icon={Check} tone="success" text="Email verified — create a password" />
+                <InputRow
+                  icon={Lock}
+                  label="Password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={setPassword}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  rightEl={eyeBtn(showPassword, () => setShowPassword((v) => !v))}
+                />
+                <InputRow
+                  icon={Lock}
+                  label="Confirm password"
+                  type={showPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                />
+                <div
+                  className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2.5 rounded-xl"
+                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
+                >
+                  <RuleRow met={rules.minLength} label="8+ characters" />
+                  <RuleRow met={rules.hasLetter} label="A letter" />
+                  <RuleRow met={rules.hasNumber} label="A number" />
+                  <RuleRow met={rules.hasSymbol} label="A symbol" />
+                </div>
+                <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
+                <SubmitButton loading={loading} label={loading ? (signupStatus || "Creating account...") : "Create account"} />
+              </form>
+            )}
 
             <p className="text-center text-[11.5px] mt-5" style={{ color: "var(--text-muted)" }}>
               {mode === "login" ? "Don't have an account? " : "Already have an account? "}
@@ -610,6 +722,33 @@ function ErrorBanner({ message }: { message: string }) {
     >
       <AlertCircle size={13} className="flex-shrink-0" />
       {message}
+    </motion.div>
+  );
+}
+
+function StatusBanner({
+  icon: Icon,
+  text,
+  tone,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  text: string;
+  tone: "success" | "error";
+}) {
+  const color = tone === "success" ? "#34d399" : "#f87171";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-[11.5px]"
+      style={{
+        background: tone === "success" ? "rgba(52,211,153,0.08)" : "rgba(239,68,68,0.08)",
+        border: `1px solid ${tone === "success" ? "rgba(52,211,153,0.25)" : "rgba(239,68,68,0.3)"}`,
+        color,
+      }}
+    >
+      <Icon size={13} className="flex-shrink-0" />
+      {text}
     </motion.div>
   );
 }
