@@ -652,9 +652,13 @@ function scrapeConversation() {
 
   // Resolve once page rendering has gone quiet (virtualizer finished
   // painting the current window). Bounded so slow platforms keep pace.
+  // MAX_MS is deliberately generous: a virtualized sidebar that is about to
+  // append an older page stays visually quiet for seconds while the network
+  // round-trip completes. Cutting this short reads a stale scrollHeight and
+  // makes the engine misjudge an in-flight lazy load as "the end".
   function waitSidebarSettle() {
     return new Promise((resolve) => {
-      const QUIET_MS = 350, MAX_MS = 1500;
+      const QUIET_MS = 700, MAX_MS = 5000;
       let quietT, maxT, obs;
       const done = () => {
         if (!obs) return;
@@ -802,12 +806,12 @@ function scrapeConversation() {
         now: () => Date.now(),
         onCycle: (d) => {
           console.log(
-            `[Brain Shadow][DISCOVERY][debug] ${config.platform}` +
-            ` scroll#${d.cycle} target=${describeEl(d.el)}` +
-            ` scrollTop=${Math.round(d.scrollTop)} scrollHeight=${d.scrollHeight} clientHeight=${d.clientHeight}` +
-            ` atBottom=${d.atBottom} newAfterScroll=${d.addedThisCycle} uniqueTotal=${d.uniqueTotal}` +
-            ` stagnant=${d.stagnantCycles}/stable=${d.heightStableCycles}` +
-            ` quietMs=${d.msSinceActivity} cands=${d.candidates ?? 1}` +
+            `[Brain Shadow][DISCOVERY][iteration ${d.cycle}] ` +
+            `chats discovered: ${d.uniqueTotal} | ` +
+            `scrollTop=${Math.round(d.scrollTop)} scrollHeight=${d.scrollHeight} clientHeight=${d.clientHeight} ` +
+            `atBottom=${d.atBottom} newThisCycle=${d.addedThisCycle} ` +
+            `stagnant=${d.stagnantCycles}/stable=${d.heightStableCycles} quietMs=${d.msSinceActivity} ` +
+            `target=${describeEl(d.el)} cands=${d.candidates ?? 1}` +
             `${d.stalled ? ' STALLING' : ''}` +
             (d.containerSwitches ? ` containerSwitches=${d.containerSwitches}` : '')
           );

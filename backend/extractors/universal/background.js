@@ -185,9 +185,21 @@ async function scrapePlatform(platform, baseUrl) {
       }
     }
 
-    // Discovery is complete — fetch the FULL deduplicated list.
+    // Discovery is complete — fetch the FULL deduplicated list. The poll loop
+    // above may have exited via TIMEOUT or user stop instead of discovery
+    // reporting done. In that case the complete chat list is NOT available yet,
+    // and scraping must NOT begin — otherwise it would operate on a partial set
+    // (e.g. only the ~30 initially-rendered sidebar rows of a 200-chat account).
     const discRes = await tabMessage(tabId, { type: 'GET_DISCOVERED_CHATS' });
     const threads = (discRes?.chats || []).filter(t => t && t.url);
+
+    if (!discRes?.done) {
+      await setSessionProgress(platform, {
+        running: false, done: true, phase: 'done',
+        title: 'Discovery did not complete — no chats scraped (please retry)',
+      });
+      return;
+    }
 
     if (!threads.length) {
       await setSessionProgress(platform, { running: false, done: true, pct: 100, title: 'No conversations found' });

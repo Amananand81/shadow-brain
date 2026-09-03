@@ -36,7 +36,15 @@
     // Consecutive cycles with (no new chats AND unchanged height AND at
     // bottom) before declaring end-of-list. Generous so slow network
     // pagination isn't cut short; NOT related to chat counts in any way.
-    stableCycles: 5,
+    //
+    // Deliberately HIGH: a virtualized sidebar often renders a stable window
+    // of ~60 rows while the platform lazily fetches OLDER pages below. During
+    // that in-flight fetch the DOM does not change (no new rows, no height
+    // growth) for seconds at a time. Counting a handful of such empty cycles
+    // as "the end" is how discovery used to stop around ~60 on accounts with
+    // hundreds of chats. We require MANY consecutive quiet cycles before we
+    // will even consider the list exhausted.
+    stableCycles: 12,
 
     // Cycles with zero scrolling movement, zero height change and zero new
     // chats while NOT at bottom => renderer looks frozen/throttled. The
@@ -50,16 +58,22 @@
 
     // Absolute wall-clock safety valve ONLY (never a chat cap): if discovery
     // somehow runs this long, stop and return what was collected.
-    maxDurationMs: 10 * 60 * 1000,
+    maxDurationMs: 20 * 60 * 1000,
 
     // Sustained wall-clock silence required AT THE BOTTOM before declaring
     // end-of-list. This is the anti-"~59 chats" guard: platforms preload
     // only the first history page, and the fetch for OLDER pages produces
-    // zero DOM changes until it lands (often 2-5s). Cycle counters alone
-    // elapsed in ~2-3s and faked exhaustion mid-fetch. Any new chat, any
-    // scrollHeight growth, a load-more click or a container swap pushes
-    // this deadline forward again.
-    bottomQuietMs: 4000,
+    // zero DOM changes until it lands (often 2-5s, and longer under hidden-tab
+    // throttling). Cycle counters alone elapsed in ~2-3s and faked exhaustion
+    // mid-fetch. Any new chat, any scrollHeight growth, a load-more click or
+    // a container swap pushes this deadline forward again.
+    //
+    // Raised so a temporary lack of NEW DOM items is NEVER mistaken for the
+    // real end: a legitimate "load older page" fetch on a large account can be
+    // silent for many seconds, and 4s was too tight, stopping discovery at the
+    // preloaded ~60-row window. We now insist on a long, genuine quiet spell at
+    // the bottom (new chats that appear reset the clock) before finishing.
+    bottomQuietMs: 15000,
 
     // Tolerance for "at bottom" checks.
     bottomEpsilon: 4,
@@ -137,6 +151,7 @@
     let heightStableCycles = 0;   // consecutive cycles with identical scrollHeight
     let stallCounter = 0;         // consecutive fully-frozen cycles (not at bottom)
     let holdEndCycles = 0;        // grace period after a successful load-more click
+    let confirmEnds = 0;          // consecutive confirmation sweeps that found nothing
     let lastHeight = null;
     let lastScrollTop = null;
     let lastReportStalled = false;
@@ -157,6 +172,7 @@
       stagnantCycles = 0;
       heightStableCycles = 0;
       stallCounter = 0;
+      confirmEnds = 0;
       lastHeight = null;
       lastScrollTop = null;
       lastActivityAt = now();
@@ -258,7 +274,7 @@
         info.scrollTop + info.clientHeight >= info.scrollHeight - opts.bottomEpsilon;
 
       // New content found → clearly not the end yet.
-      if (added > 0) stagnantCycles = 0; else stagnantCycles++;
+      if (added > 0) { stagnantCycles = 0; confirmEnds = 0; } else stagnantCycles++;
       if (added !== 0 || seen.size !== addedLast) { addedLast = seen.size; }
 
       // List height changing ⇒ older pages are still being appended.
@@ -290,14 +306,59 @@
       //    "exhausted" after bottomQuietMs of TOTAL silence (no new chats,
       //    no growth, no clicks, no container change) while parked at the
       //    bottom. Cycle counters alone fired in ~2-3s — mid-fetch.
-      const endReached =
+      //
+      //    Additionally, before we FINISH we force an active re-verification
+      //    sweep: we never trust a single passive DOM snapshot. A virtualized
+      //    sidebar can sit at a stable ~60-row window while its older-page
+      //    fetch is in flight, so "no NEW items in THIS snapshot" must never
+      //    mean "the list is over". Only after the passive gates hold AND
+      //    several deliberate scroll-back-and-forward confirmation sweeps come
+      //    back with nothing new do we declare the real end.
+      const endCandidate =
         atBottom &&
         holdEndCycles <= 0 &&
         stagnantCycles >= opts.stableCycles &&
         heightStableCycles >= opts.stableCycles &&
         (now() - lastActivityAt) >= opts.bottomQuietMs;
 
-      if (endReached) return finish('end_of_list');
+      if (endCandidate) {
+        // Confirmation sweep: physically drag the container back and forward
+        // so a lazy "load older" sentinel / virtualizer is genuinely re-triggered,
+        // then re-harvest. If anything new appears, activity resets and we keep going.
+        const tgt = container;
+        const infoBefore = await safe(async () =>
+          (hooks.getScrollInfo ? hooks.getScrollInfo(tgt) : null), null) || {};
+        try {
+          const up = Math.max(0, (infoBefore.scrollTop || 0) - 240);
+          tgt.scrollTop = up;
+        } catch {}
+        await safe(() => hooks.waitForSettle ? hooks.waitForSettle() : hooks.wait(300));
+        const confirmAdded = harvest();
+        const infoMid = await safe(async () =>
+          (hooks.getScrollInfo ? hooks.getScrollInfo(tgt) : null), null) || {};
+        try {
+          if (infoMid.scrollHeight > (infoMid.clientHeight || 0)) tgt.scrollTop = Math.max(0, infoMid.scrollHeight - (infoMid.clientHeight || 0));
+        } catch {}
+        await safe(() => hooks.waitForSettle ? hooks.waitForSettle() : hooks.wait(300));
+        const confirmAdded2 = harvest();
+
+        const confirmFresh = confirmAdded + confirmAdded2;
+        if (confirmFresh > 0) {
+          // New chats appeared during re-verification → clearly not the end.
+          stagnantCycles = 0;
+          heightStableCycles = 0;
+          confirmEnds = 0;
+          lastActivityAt = now();
+        } else {
+          confirmEnds++;
+          // Reset to the bottom so the next cycle continues from a clean state.
+          try { if (tgt.scrollHeight > (tgt.clientHeight || 0)) tgt.scrollTop = Math.max(0, tgt.scrollHeight - (tgt.clientHeight || 0)); } catch {}
+        }
+
+        const endReached = confirmEnds >= 2;
+        if (endReached) return finish('end_of_list');
+      }
+
       if (stallCounter >= opts.stallGiveUpCycles) return finish('stalled_gave_up');
 
       // 7) Per-cycle telemetry for the host (debug logging requirement:
