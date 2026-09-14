@@ -340,7 +340,7 @@ const searchConversations = async (req, res, next) => {
       });
     }
 
-    const context = scored.map(({ conv }) => {
+    const context = scored.map(({ conv }, index) => {
       const msgs = conv.messages.slice(0, 12)
         .map(m => {
           if (isMetadataOnlyMessage(m.content)) return null;
@@ -352,251 +352,56 @@ const searchConversations = async (req, res, next) => {
         .filter(Boolean)
         .join('\n\n');
 
-      return msgs;
+      return `--- CONVERSATION ${index + 1} ---\n${msgs}`;
     }).filter(Boolean).join('\n\n\n');
 
-    const systemPrompt = `You are a conversation-memory summarization system.
+    const systemPrompt = `You are an expert conversation-memory summarization system.
+Your task is to analyze a set of related conversations together, identify the user's underlying journey and intent, and produce ONE concise, meaningful summary paragraph.
 
-Your task is to read the user's search query and the retrieved conversation content, determine which conversations are genuinely relevant, understand their actual meaning, and produce ONE concise, natural summary.
+### INSTRUCTIONS
 
-IMPORTANT:
-The final output must summarize the SUBJECT MATTER and MEANING of the conversations, NOT describe the conversations themselves.
+1. Analyze ALL provided related conversations together as one continuous journey or problem space.
+2. Prioritize USER messages to understand intent: What does the user want? Why are they exploring this? What are they trying to achieve?
+3. Use ASSISTANT responses only as supporting context to understand the concepts discussed. Do NOT treat the AI response as the user's intention.
+4. Identify the common theme and the user's overall goal. Determine if the user is learning, building, debugging, researching, planning, or solving a problem.
+5. Merge related concepts into higher-level themes and remove repetitive information across conversations.
+6. Ignore any irrelevant conversations or stray topics that do not fit the main intent.
 
-### INPUT
+### DESIRED INTERNAL REASONING
 
-You will receive:
+Before generating the final output, you MUST output a JSON block inside \`\`\`json \`\`\` reasoning about the following structure (this helps you synthesize):
 
-1. SEARCH QUERY
-${query}
+\`\`\`json
+{
+  "mainTopic": "...",
+  "userIntent": "...",
+  "conceptsOrProblems": ["...", "..."],
+  "overallGoal": "...",
+  "journey": "..."
+}
+\`\`\`
 
-2. CONVERSATION CONTENT
-Conversation content may contain raw user/assistant messages, metadata, filenames, previous summaries, titles, platforms, or search-result formatting.
+### FINAL OUTPUT
 
-${context}
+After your JSON reasoning, provide the final summary.
 
-### STEP 1 — UNDERSTAND THE SEARCH QUERY
+The final output MUST be exactly ONE natural, flowing paragraph (approx. 2-4 sentences).
 
-First determine what the user is actually looking for.
+The summary MUST answer: "What was this user mainly exploring or working on across these conversations, and what were they trying to achieve?"
 
-For example:
+Do NOT:
+- Do NOT simply concatenate or rewrite user questions or AI responses.
+- Do NOT summarize each conversation independently.
+- Do NOT produce a chronological transcript ("First the user asked... Then the AI...").
+- Do NOT mention every individual question or error unless it is necessary to explain the overall goal.
+- Do NOT hallucinate goals, technologies, or projects that aren't mentioned.
+- Do NOT start sentences with "The user asked", "The user wanted to know", or "The AI responded".
 
-Search query:
-"Brain Shadow LLM integration"
+Example of BAD output (transcript style):
+The user asked what RAG is. Then they asked for an LLM roadmap. Later they wanted to know how to integrate LLM into Brain Shadow and asked about embeddings.
 
-The goal is to identify conversations about:
-
-* Brain Shadow development
-* LLM integration
-* LLM learning related to the project
-* problems, solutions, architecture, APIs, authentication, scraping, deployment, or other work directly connected to Brain Shadow
-
-Do NOT include a conversation just because it contains a keyword or passing mention.
-
-### STEP 2 — FILTER IRRELEVANT CONTENT
-
-Ignore conversations that are unrelated to the search topic.
-
-A conversation is NOT relevant merely because:
-
-* the filename contains a matching word
-* the title contains a matching word
-* a keyword appears once
-* the conversation contains a passing mention
-* the content is an unrelated resume discussion
-* the content is an unrelated internship/job message
-* the content is unrelated personal or general discussion
-
-For example, if the search topic is "Brain Shadow", an unrelated internship advertisement must NOT be included.
-
-### STEP 3 — IGNORE SEARCH-RESULT METADATA
-
-Do NOT treat the following as meaningful conversation content:
-
-* filenames such as "Pasted text(20260827-043958).txt"
-* "Document"
-* "Title:"
-* "Platform:"
-* "Topic:"
-* "Summary:"
-* "Relevant messages:"
-* search-result labels
-* conversation numbers
-* result counts
-* previously generated summaries
-* phrases such as "The user started by asking..."
-* phrases such as "The AI responded..."
-* phrases such as "The user asked..."
-
-Metadata may help identify a conversation internally, but it must NEVER appear in the final summary.
-
-If both a previous summary and raw conversation messages are available, use the RAW CONVERSATION as the primary source of truth.
-
-### STEP 4 — UNDERSTAND THE ACTUAL MEANING
-
-For every relevant conversation, identify:
-
-* What was being worked on?
-* What problem was encountered?
-* What was learned?
-* What solution was implemented or discussed?
-* What technical concepts were involved?
-* How did the work progress?
-* What important outcome came from the conversation?
-
-Do NOT copy the user's questions and do NOT describe who asked or answered them.
-
-Convert questions into meaningful statements.
-
-Example:
-
-BAD:
-"The user asked what RAG is and the AI explained it."
-
-GOOD:
-"The discussion covered RAG and how retrieval can provide relevant information to improve AI responses."
-
-BAD:
-"The user asked why the Chrome extension received a 401 error."
-
-GOOD:
-"The Chrome extension's authentication flow was debugged after API requests returned 401 Unauthorized because the JWT was not being passed correctly in the Authorization header."
-
-BAD:
-"The user asked how to learn LLMs from basic concepts."
-
-GOOD:
-"LLM learning progressed from fundamentals such as tokens, embeddings, transformers, context windows, and semantic search toward practical integration with Brain Shadow."
-
-Another concrete example:
-
-Input messages about SQL:
-USER: What is SQL?
-ASSISTANT: SQL is a language used to work with relational databases.
-USER: What is a JOIN?
-ASSISTANT: JOIN combines rows from multiple tables.
-USER: How do I use GROUP BY?
-ASSISTANT: GROUP BY groups rows based on specified columns.
-
-Do NOT output:
-"The user asked what SQL is, then asked about JOINs, and later asked about GROUP BY. The AI explained each concept."
-
-Instead output:
-"SQL learning covered fundamental database concepts, including querying relational data, combining tables with JOIN operations, and grouping and analyzing records using GROUP BY."
-
-### STEP 5 — SYNTHESIZE THE INFORMATION
-
-Combine all genuinely relevant conversations into ONE coherent story.
-
-Do not create one mini-summary for every conversation.
-
-Instead, connect related information and show progression.
-
-Remove duplicate information: if the same idea, concept, or learning appears in more than one conversation (including across different platforms), mention it ONCE and merge any extra details into that single mention. Do not repeat it for each conversation.
-
-For example, instead of:
-
-"The user learned about LLMs.
-The user worked on JWT.
-The user worked on scraping.
-The user worked on deployment."
-
-Write:
-
-"Brain Shadow evolved into an AI-powered conversation memory system, with development covering multi-platform conversation scraping, JWT-based authentication, backend integration, deployment, and LLM-powered processing. The work also involved learning LLM fundamentals such as tokens, embeddings, semantic search, transformers, context windows, and RAG to improve how the system understands and summarizes stored conversations."
-
-### STEP 6 — FINAL OUTPUT STYLE
-
-Write ONE brief connected paragraph of 1 to 3 concise sentences.
-
-The paragraph should:
-
-1. Start with the overall subject or project.
-2. Mention the most important areas of work or learning.
-3. Show progression when possible.
-4. Mention important problems and solutions when relevant.
-5. End with the overall outcome or current direction.
-
-Keep it to 1-3 sentences. If the conversations contain limited distinct information, 1 sentence is enough. Only exceed 3 sentences if the conversations genuinely cover many distinct, non-duplicate areas.
-
-Do NOT use bullet points unless explicitly requested.
-
-Do NOT mention the number of conversations.
-
-Do NOT mention filenames.
-
-Do NOT mention metadata.
-
-Do NOT mention search results.
-
-Do NOT mention the AI or assistant.
-
-Do NOT mention that the user "asked", "started", "explored", "received a response", or "was told".
-
-### ABSOLUTE BANNED PATTERNS
-
-Never generate sentences beginning with or containing:
-
-* "The user started by asking..."
-* "The user asked..."
-* "The user wanted to know..."
-* "The user explored..."
-* "The user then..."
-* "The AI responded..."
-* "The assistant explained..."
-* "The AI provided..."
-* "The conversation shifted..."
-* "The conversation started..."
-* "The user received..."
-* "The user was given..."
-* "Pasted text..."
-* ".txt"
-* "Document"
-* "CONVERSATION 1"
-* "CONVERSATION 2"
-* "Title:"
-* "Platform:"
-* "Topic:"
-* "Summary:"
-* "Relevant messages:"
-
-### IMPORTANT ANTI-RECURSION RULE
-
-If the input contains text that already looks like a generated summary, do NOT summarize that summary's wording.
-
-For example, if the input says:
-
-"The user started by asking about JWT and the AI responded with..."
-
-Do NOT reproduce or summarize that sentence.
-
-Instead, look for the underlying technical information and convert it into a direct statement:
-
-"JWT authentication was debugged after the Chrome extension failed to send the required token to the backend."
-
-The final summary must always describe the underlying subject matter, not the structure or wording of previous summaries.
-
-### EXAMPLE
-
-Input:
-"The user asked what an LLM is. The AI explained that LLMs process tokens and generate text. Later, the user learned about embeddings, transformers, context windows, and RAG for Brain Shadow."
-
-Output:
-"Brain Shadow's development expanded into practical LLM learning, covering core concepts such as tokens, embeddings, transformers, context windows, and RAG, with these concepts being connected to the system's goal of understanding and processing stored AI conversations."
-
-### FINAL RULE
-
-Think internally in this order:
-
-SEARCH QUERY
-→ FIND RELEVANT CONVERSATIONS
-→ IGNORE METADATA
-→ IGNORE PREVIOUS SUMMARY WORDING
-→ UNDERSTAND RAW CONTENT
-→ EXTRACT MEANING
-→ CONNECT RELATED INFORMATION
-→ WRITE ONE NATURAL SUMMARY
-
-The final answer should read like a concise description of the actual knowledge, work, or project progression — not a description of the conversations.`;
+Example of GOOD output (synthesized):
+The user is learning about Large Language Models (LLMs) from basic concepts to practical implementation. Their discussions progressed from understanding fundamentals like embeddings and RAG toward integrating these capabilities into the Brain Shadow project. Overall, they are focused on building a strong understanding of LLM technology to apply it successfully to their application.`;
 
     const sources = [];
     for (const { conv, relevantMsgs } of scored) {
@@ -629,8 +434,39 @@ The final answer should read like a concise description of the actual knowledge,
 
     let answer;
     try {
-      const result = await groqService.chat([{ role: 'user', content: query }], systemPrompt);
-      answer = result.content;
+      const result = await groqService.chat(
+        [{ role: 'user', content: `SEARCH QUERY:\n${query}\n\nCONVERSATIONS:\n${context}` }],
+        systemPrompt
+      );
+      
+      let rawContent = result.content || "";
+      
+      // Extract the JSON block from the final output (and ignore it for the frontend)
+      const jsonRegex = /\`\`\`json[\s\S]*?\`\`\`/i;
+      const match = rawContent.match(jsonRegex);
+      
+      if (match) {
+        // Remove the json block, then trim leading/trailing whitespace
+        answer = rawContent.replace(jsonRegex, '').trim();
+        // Remove any residual markdown markers that might have been left behind
+        answer = answer.replace(/^\s*```[\s\S]*?```\s*/, '').trim();
+      } else {
+        answer = rawContent.trim();
+      }
+      
+      // If the LLM ONLY output the JSON block and nothing else, or if the stripping failed.
+      if (!answer || answer.startsWith('{')) {
+        // the LLM might have messed up and output raw JSON without markdown.
+        // As a fallback, try parsing or regenerating the fallback.
+        try {
+           const parsed = JSON.parse(rawContent.replace(/\`\`\`json/i, '').replace(/\`\`\`/i, '').trim());
+           if (parsed.journey || parsed.overallGoal) {
+             answer = parsed.journey || parsed.overallGoal || buildFallbackAnswer(query, scored);
+           }
+        } catch(e) {
+           answer = buildFallbackAnswer(query, scored);
+        }
+      }
     } catch (groqErr) {
       logger.error(`[Search] Groq failed: ${groqErr.message}`);
       answer = buildFallbackAnswer(query, scored);
