@@ -470,7 +470,9 @@ export default function Home() {
               setIsTyping(true);
 
               try {
+                console.log("[onNoResultsFound] Calling sendChatMessage with history:", history);
                 const { content } = await sendChatMessage(history);
+                console.log("[onNoResultsFound] Got response:", content);
 
                 const aiMsg: Message = {
                   id: generateId(),
@@ -491,11 +493,11 @@ export default function Home() {
                 // Switch to chat view to show the answer
                 setCenterView("chat");
               } catch (err) {
-                console.error("[GraphCenter] no results chat failed", err);
+                console.error("[onNoResultsFound] sendChatMessage failed:", err);
                 const errMsg: Message = {
                   id: generateId(),
                   role: "assistant",
-                  content: "Sorry, I couldn't reach the AI backend to provide a deep answer.",
+                  content: `Sorry, I couldn't reach the AI backend to provide a deep answer. Error: ${err instanceof Error ? err.message : String(err)}`,
                   timestamp: new Date(),
                 };
                 setSessions((prev) =>

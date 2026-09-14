@@ -60,13 +60,22 @@ export async function sendChatMessage(
   messages: ApiMessage[],
   systemPrompt?: string,
 ): Promise<{ content: string }> {
-  const res = await fetch(toApiUrl('/api/chat'), {
+  const url = toApiUrl('/api/chat');
+  console.log('[sendChatMessage] POST', url, { messagesCount: messages.length });
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, systemPrompt }),
   });
-  if (!res.ok) throw new Error(`Chat error ${res.status}`);
-  return res.json();
+  console.log('[sendChatMessage] Response status:', res.status, res.statusText);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    console.error('[sendChatMessage] Error response:', text);
+    throw new Error(`Chat error ${res.status}: ${text}`);
+  }
+  const data = await res.json();
+  console.log('[sendChatMessage] Parsed response:', data);
+  return data;
 }
 
 export async function fetchConversations(): Promise<ApiConversation[]> {

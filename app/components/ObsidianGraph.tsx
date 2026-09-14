@@ -362,7 +362,7 @@ const NODE_VERT = `
     float basePulse = 0.5 - 0.5 * cos(uTime * 1.2);
     float hiPulse = aHi * (0.5 - 0.5 * cos(uTime * 4.5));
     vPulse = basePulse + hiPulse;
-    float baseSize = size * (1.0 + aSearchMatch * 0.8);
+    float baseSize = size * (1.0 + aSearchMatch * 1.5);
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     float pulseScale = 1.0 + vPulse * (0.06 + aHi * 0.30);
     gl_PointSize = baseSize * pulseScale * (420.0 / -mvPosition.z);
@@ -377,8 +377,8 @@ const NODE_FRAG = `
   varying float vPulse;
   void main(){
     vec4 tex = texture2D(pointTexture, gl_PointCoord);
-    vec3 col = mix(vColor, vec3(1.0), vHi * (0.45 + 0.25 * vPulse));
-    float amp = 1.0 + vPulse * 0.08 + vHi * (0.5 + 0.9 * vPulse);
+    vec3 col = mix(vColor, vec3(1.0), vHi * (0.65 + 0.35 * vPulse));
+    float amp = 1.0 + vPulse * 0.12 + vHi * (0.7 + 1.2 * vPulse);
     gl_FragColor = vec4(col * amp, 1.0) * tex;
   }
 `;
@@ -504,6 +504,10 @@ function GraphScene({
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
+    const hoverRingMat = new THREE.LineBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
     const lineMat = new THREE.LineBasicMaterial({
       vertexColors: true, transparent: true, opacity: 0.16,
       blending: THREE.AdditiveBlending, depthWrite: false,
@@ -518,8 +522,8 @@ function GraphScene({
       fragmentShader: PARTICLE_FRAG,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     });
-    const all = [hazeMat, ringMat, eqMat, coreOuterMat, coreMidMat, coreInnerMat, nodeMat, lineMat, hlMat, particleMat];
-    return { hazeMat, ringMat, eqMat, coreOuterMat, coreMidMat, coreInnerMat, nodeMat, lineMat, hlMat, particleMat, all };
+    const all = [hazeMat, ringMat, eqMat, coreOuterMat, coreMidMat, coreInnerMat, nodeMat, lineMat, hlMat, particleMat, hoverRingMat];
+    return { hazeMat, ringMat, eqMat, coreOuterMat, coreMidMat, coreInnerMat, nodeMat, lineMat, hlMat, particleMat, hoverRingMat, all };
   }, [data]);
   useEffect(() => () => materials.all.forEach((m) => m.dispose()), [materials]);
 
@@ -557,6 +561,15 @@ function GraphScene({
   });
 
   const hoveredIdxRef = useRef<number | null>(null);
+
+  // Hover ring geometry (follows hovered node)
+  const hoverRingGeo = useMemo(() => {
+    const curve = new THREE.EllipseCurve(0, 0, 1, 1, 0, Math.PI * 2, false, 0);
+    const pts = curve.getPoints(48).map((p) => new THREE.Vector3(p.x, p.y, 0));
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  }, []);
+  useEffect(() => () => hoverRingGeo.dispose(), [hoverRingGeo]);
+  const hoverRingRef = useRef<THREE.LineLoop | null>(null);
 
   const setHighlightEdgesFor = useCallback((idx: number | null) => {
     const geo = data.hlGeo;
@@ -641,7 +654,7 @@ function GraphScene({
     const cam = camRef.current;
     if (!el || !cam) return;
     const raycaster = new THREE.Raycaster();
-    raycaster.params.Points!.threshold = 6;
+    raycaster.params.Points!.threshold = 18;
     const mouse = new THREE.Vector2(2, 2);
 
     const activePointers = new Map<number, { x: number; y: number }>();
@@ -846,6 +859,18 @@ function GraphScene({
       particlesRef.current.rotation.y -= 0.036 * dt;
       particlesRef.current.rotation.x = Math.sin(t * 0.05) * 0.05;
     }
+
+    // Update hover ring position
+    const hr = hoverRingRef.current;
+    const hoveredIdx = hoveredIdxRef.current;
+    if (hr && hoveredIdx != null) {
+      const idx = hoveredIdx * 3;
+      hr.position.set(data.positions[idx], data.positions[idx + 1], data.positions[idx + 2]);
+      hr.scale.setScalar(14 * (1 + Math.sin(t * 6) * 0.15));
+      (hr.material as THREE.LineBasicMaterial).opacity = 0.7 + 0.3 * Math.sin(t * 8);
+    } else if (hr) {
+      hr.scale.setScalar(0);
+    }
   });
 
   return (
@@ -875,6 +900,16 @@ function GraphScene({
 
       <lineSegments geometry={data.hlGeo} material={materials.hlMat} />
 
+      <lineLoop
+        ref={hoverRingRef}
+        geometry={hoverRingGeo}
+        material={materials.hoverRingMat}
+        scale={hoveredIdxRef.current != null ? [14, 14, 14] : [0, 0, 0]}
+        position={hoveredIdxRef.current != null
+          ? [data.positions[hoveredIdxRef.current * 3], data.positions[hoveredIdxRef.current * 3 + 1], data.positions[hoveredIdxRef.current * 3 + 2]]
+          : [0, 0, 0]}
+      />
+
       <points geometry={data.particleGeo} material={materials.particleMat} ref={particlesRef} />
 
       <DateLabels data={data} highlightedNodes={hNodes} nodeDates={nodeDates ?? new Map()} />
@@ -901,7 +936,7 @@ export const ObsidianGraph = forwardRef<ObsidianGraphHandle, ObsidianGraphProps>
         <Canvas
           flat
           dpr={[1, 2]}
-          gl={{ alpha: true, antialias: true }}
+          gl={{ alpha: true, antialias: true, failDetect: false }}
           style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
         >
           <GraphScene
