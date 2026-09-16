@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, Sparkles, Loader2, X, Clock, Orbit, Crosshair, Lock, LockOpen } from "lucide-react";
 import type { ObsidianGraphHandle, ZoomLevel } from "./ObsidianGraph";
 import { ChatSession, Message } from "@/app/types";
-import { searchMemory, MemorySource } from "@/app/lib/api";
+import { searchMemory, MemorySource, AnswerSection } from "@/app/lib/api";
 import { AI_AGENTS, PLATFORM_COLORS, PLATFORM_LABELS, PLATFORM_ABBR } from "@/app/lib/agents";
 
 const ObsidianGraphRaw = dynamic(() => import("./ObsidianGraph").then((m) => m.ObsidianGraph), {
@@ -36,6 +36,7 @@ interface GraphCenterProps {
   sessions?: ChatSession[];
   sessionsLoading?: boolean;
   selectedAgents?: string[];
+  onSelectConversation?: (id: string) => void;
 }
 
 function fmtTime(date: Date): string {
@@ -223,6 +224,8 @@ interface SearchResultsPanelProps {
   aiLoading: boolean;
   aiAnswer: string;
   aiSources: MemorySource[];
+  answerSections?: AnswerSection[];
+  onRefClick?: (convId: string) => void;
   pinnedNodeId: number | null;
   onUnpin: () => void;
   onDismiss: () => void;
@@ -234,6 +237,8 @@ function SearchResultsPanel({
   aiLoading,
   aiAnswer,
   aiSources,
+  answerSections,
+  onRefClick,
   pinnedNodeId,
   onUnpin,
   onDismiss,
@@ -319,11 +324,65 @@ function SearchResultsPanel({
                 <Loader2 size={13} className="animate-spin" style={{ color: "var(--text-muted)" }} />
                 <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>Searching memory…</span>
               </div>
-            ) : aiAnswer ? (
+            ) : (aiAnswer || (answerSections && answerSections.length > 0)) ? (
               <>
-                <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
-                  {aiAnswer}
-                </p>
+                {/* Render per-source summary sections */}
+                {answerSections && answerSections.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {answerSections.map((section, idx) => (
+                      <div
+                        key={`${section.convId}-${idx}`}
+                        className="p-3 rounded-lg flex flex-col gap-2 transition-all"
+                        style={{
+                          background: "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(255,255,255,0.07)",
+                        }}
+                      >
+                        <p
+                          className="text-[12.5px] leading-relaxed"
+                          style={{ color: "var(--text-primary)", whiteSpace: "pre-wrap" }}
+                        >
+                          {section.text}
+                        </p>
+                        <div className="flex items-center justify-end pt-1">
+                          <button
+                            onClick={() => onRefClick?.(section.convId)}
+                            title="Open conversation in middle chat panel"
+                            className="inline-flex items-center gap-1.5 transition-all"
+                            style={{
+                              fontSize: "10px",
+                              fontWeight: 600,
+                              padding: "3px 8px",
+                              borderRadius: "6px",
+                              background: "rgba(139,92,246,0.18)",
+                              border: "1px solid rgba(139,92,246,0.45)",
+                              color: "#c4b5fd",
+                              cursor: "pointer",
+                              letterSpacing: "0.02em",
+                            }}
+                            onMouseEnter={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.background = "rgba(139,92,246,0.35)";
+                              (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(139,92,246,0.8)";
+                              (e.currentTarget as HTMLButtonElement).style.color = "#ffffff";
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.background = "rgba(139,92,246,0.18)";
+                              (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(139,92,246,0.45)";
+                              (e.currentTarget as HTMLButtonElement).style.color = "#c4b5fd";
+                            }}
+                          >
+                            [Reference]
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Fallback: no sections — render the plain answer string */
+                  <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
+                    {aiAnswer}
+                  </p>
+                )}
 
                 {aiSources.length > 0 && (
                   <div className="flex flex-col gap-2 mt-3">
@@ -498,7 +557,7 @@ function wordScore(text: string, word: string, stemmedWord: string, synonyms: st
 
 // ────────────────────────────────────────────────────────────────────────────
 
-export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange, onResultsPanelContentChange, panelResetKey, sessions = [], sessionsLoading = false, selectedAgents = [] }: GraphCenterProps) {
+export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange, onResultsPanelContentChange, panelResetKey, sessions = [], sessionsLoading = false, selectedAgents = [], onSelectConversation }: GraphCenterProps) {
   // null = auto mode (show all matches); set to a nodeId when user clicks a specific node
   const [pinnedNodeId, setPinnedNodeId] = useState<number | null>(null);
   const [clickedSessions, setClickedSessions] = useState<ChatSession[]>([]);
@@ -520,6 +579,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
   // AI answer from backend memory search
   const [aiAnswer, setAiAnswer] = useState<string>("");
   const [aiSources, setAiSources] = useState<MemorySource[]>([]);
+  const [answerSections, setAnswerSections] = useState<AnswerSection[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const aiDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -632,6 +692,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
       setClickedSessions([]);
       setAiAnswer("");
       setAiSources([]);
+      setAnswerSections([]);
       onAiSourcesChange?.([]);
       setAiLoading(false);
       onAiLoadingChange?.(false);
@@ -659,6 +720,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
         if (cancelled) return;
         setAiAnswer(result.answer);
         setAiSources(result.sources);
+        setAnswerSections(result.answerSections ?? []);
         onAiSourcesChange?.(result.sources);
         onAiAnswerReady?.(searchKeyword.trim().toLowerCase(), result.answer);
       } catch (err) {
@@ -666,6 +728,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
         if (cancelled) return;
         setAiAnswer("");
         setAiSources([]);
+        setAnswerSections([]);
         onAiSourcesChange?.([]);
       } finally {
         if (!cancelled) {
@@ -692,6 +755,20 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
       setConversationPopupOpen(true);
     }
   }, []);
+
+  // onRefClick: find the ChatSession matching convId and open it in the middle chat panel
+  // (using the exact same mechanism as clicking a conversation from the left sidebar).
+  const handleRefClick = useCallback((convId: string) => {
+    if (onSelectConversation) {
+      onSelectConversation(convId);
+    } else {
+      const found = sessions.find(s => s.id === convId) ?? null;
+      if (found) {
+        setSelectedConversation(found);
+        setConversationPopupOpen(true);
+      }
+    }
+  }, [onSelectConversation, sessions]);
 
   // Unpin — go back to showing all matches
   const handleUnpin = useCallback(() => {
@@ -734,12 +811,14 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
         aiLoading={aiLoading}
         aiAnswer={aiAnswer}
         aiSources={aiSources}
+        answerSections={answerSections}
+        onRefClick={handleRefClick}
         pinnedNodeId={pinnedNodeId}
         onUnpin={handleUnpin}
         onDismiss={handleDismissPanel}
       />
     );
-  }, [showHistory, displayedSessions, searchKeyword, aiLoading, aiAnswer, aiSources, pinnedNodeId, handleUnpin, handleDismissPanel]);
+  }, [showHistory, displayedSessions, searchKeyword, aiLoading, aiAnswer, aiSources, answerSections, pinnedNodeId, handleUnpin, handleDismissPanel]);
 
   useEffect(() => {
     onResultsPanelContentChange?.(resultsPanelContent);

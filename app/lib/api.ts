@@ -83,7 +83,12 @@ export interface MemorySource {
   keywords?: string[];
 }
 
-export async function searchMemory(query: string, platforms?: string[]): Promise<{ answer: string; sources: MemorySource[] }> {
+export interface AnswerSection {
+  text: string;
+  convId: string;
+}
+
+export async function searchMemory(query: string, platforms?: string[]): Promise<{ answer: string; answerSections?: AnswerSection[]; sources: MemorySource[] }> {
   const url = toApiUrl('/api/conversations/search');
   const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -111,6 +116,7 @@ export async function searchMemory(query: string, platforms?: string[]): Promise
       answer: isNetworkError
         ? 'Could not reach the backend. Make sure it is running on port 8000.'
         : `Search failed: ${(e as Error).message}`,
+      answerSections: [],
       sources: [],
     };
   }

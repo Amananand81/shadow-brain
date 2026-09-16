@@ -194,10 +194,16 @@ export default function Home() {
   }, []);
 
   const handleSelect = useCallback((id: string) => {
+    if (!id) return;
+    const exists = sessions.some((s) => s.id === id);
+    if (!exists) {
+      console.warn(`[handleSelect] Conversation ${id} not found in user sessions`);
+      return;
+    }
     setActiveId(id);
     setCenterView("chat");
     setIsMobileOpen(false);
-  }, []);
+  }, [sessions]);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -414,6 +420,7 @@ export default function Home() {
             sessions={filteredSessions}
             sessionsLoading={sessionsLoading}
             selectedAgents={selectedAgents}
+            onSelectConversation={handleSelect}
           />
         )}
 

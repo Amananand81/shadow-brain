@@ -228,33 +228,50 @@ const getConversationStatus = async (req, res, next) => {
 };
 
 const buildFallbackAnswer = (query, scored) => {
-  // Build the fallback from CLEAN raw messages, never from old enrichment
-  // summaries (which contain "The user asked..." / filenames / metadata).
-  const parts = [];
-  for (const { conv } of scored.slice(0, 3)) {
-    const messages = (conv.messages || []);
-    const userMsgs = messages.filter(m => m.role === 'user' && !isMetadataOnlyMessage(m.content));
-    const aiMsgs = messages.filter(m => m.role !== 'user' && !isMetadataOnlyMessage(m.content));
+  // Fallback: generate the best summary we can without calling an LLM.
+  // Priority: conv.title (clean) + enrichment.summary (if available) > enrichment alone > title alone > raw message.
+  const sections = [];
+  const looksLikeFilename = (s) => /.(pdf|docx|txt|xlsx|png|jpg|csv)/i.test(s);
 
-    const firstUser = (userMsgs[0]?.content || '').slice(0, 300);
-    const firstAi = (aiMsgs[0]?.content || '').slice(0, 300);
+  for (const { conv } of scored) {
+    // Prefer conv.title as the topic label — it's set from the scraped page title and is usually clean.
+    // Fall back to enrichment.topic only if title is absent or looks like a filename.
+    const titleLabel = (conv.title || '').trim();
+    const enrichTopic = (conv.enrichment?.topic || '').trim();
+    const topic = (titleLabel && !looksLikeFilename(titleLabel)) ? titleLabel
+                : (enrichTopic && !looksLikeFilename(enrichTopic)) ? enrichTopic
+                : titleLabel || enrichTopic;
 
-    const cleanUser = sanitizeMessageContent(firstUser);
-    const cleanAi = sanitizeMessageContent(firstAi);
+    const enrichmentSummary = (conv.enrichment?.summary || '').trim();
 
-    if (cleanUser && cleanAi) {
-      parts.push(`${cleanUser} ${cleanAi}`);
-    } else if (cleanUser) {
-      parts.push(cleanUser);
+    let text = '';
+
+    if (topic && enrichmentSummary) {
+      // Clean up boilerplate enrichment prefixes, then compose: "Title — summary."
+      const cleanSummary = enrichmentSummary
+        .slice(0, 200)
+        .replace(/^The user (asked|discussed|explored|wanted|started by asking)\s+/i, '')
+        .trim();
+      text = `${topic} — ${cleanSummary}`;
+    } else if (topic) {
+      text = topic;
+    } else {
+      // Last resort: sanitize the first user message
+      const messages = (conv.messages || []);
+      const userMsgs = messages.filter(m => m.role === 'user' && !isMetadataOnlyMessage(m.content));
+      const firstUser = sanitizeMessageContent((userMsgs[0]?.content || '').slice(0, 200));
+      if (firstUser) text = firstUser;
+    }
+
+    if (text) {
+      sections.push({
+        text: text.trim(),
+        convId: conv._id.toString(),
+      });
     }
   }
 
-  const joined = parts.filter(Boolean).join(' ');
-  if (joined) {
-    return joined;
-  }
-
-  return `No usable conversation content was found for "${query}". The related conversations could not be summarized automatically.`;
+  return sections;
 };
 
 // Normalize a search query for relevance matching: lowercase, strip punctuation,
@@ -340,69 +357,220 @@ const searchConversations = async (req, res, next) => {
       });
     }
 
+    // Build the context with USER and ASSISTANT turns in clearly labelled sections.
+    // An optional TOPIC HINT from enrichment metadata anchors each block so the LLM
+    // can identify per-conversation meaning before it reads every message.
     const context = scored.map(({ conv }, index) => {
-      const msgs = conv.messages.slice(0, 12)
+      const allMsgs = conv.messages.slice(0, 20);
+
+      const userLines = allMsgs
+        .filter(m => m.role === 'user')
         .map(m => {
           if (isMetadataOnlyMessage(m.content)) return null;
-          const role = m.role === 'user' ? 'USER' : 'ASSISTANT';
           const content = sanitizeMessageContent(m.content);
-          if (!content) return null;
-          return `${role}: ${content.slice(0, 500)}`;
+          return content ? `  MSG: ${content.slice(0, 400)}` : null;
         })
-        .filter(Boolean)
-        .join('\n\n');
+        .filter(Boolean);
 
-      return `--- CONVERSATION ${index + 1} ---\n${msgs}`;
-    }).filter(Boolean).join('\n\n\n');
+      const aiLines = allMsgs
+        .filter(m => m.role !== 'user')
+        .map(m => {
+          if (isMetadataOnlyMessage(m.content)) return null;
+          const content = sanitizeMessageContent(m.content);
+          return content ? `  MSG: ${content.slice(0, 300)}` : null;
+        })
+        .filter(Boolean);
 
-    const systemPrompt = `You are an expert conversation-memory summarization system.
-Your task is to analyze a set of related conversations together, identify the user's underlying journey and intent, and produce ONE concise, meaningful summary paragraph.
+      if (!userLines.length) return null;
 
-### INSTRUCTIONS
+      // Optional topic hint from enrichment so the LLM has a semantic anchor.
+      const topicHint = conv.enrichment?.topic || conv.title || '';
 
-1. Analyze ALL provided related conversations together as one continuous journey or problem space.
-2. Prioritize USER messages to understand intent: What does the user want? Why are they exploring this? What are they trying to achieve?
-3. Use ASSISTANT responses only as supporting context to understand the concepts discussed. Do NOT treat the AI response as the user's intention.
-4. Identify the common theme and the user's overall goal. Determine if the user is learning, building, debugging, researching, planning, or solving a problem.
-5. Merge related concepts into higher-level themes and remove repetitive information across conversations.
-6. Ignore any irrelevant conversations or stray topics that do not fit the main intent.
+      let block = `=== CONVERSATION ${index + 1}${topicHint ? ` [${topicHint}]` : ''} ===`;
+      block += `\n-- USER MESSAGES (intent/goals/problems/experience — primary source) --\n${userLines.join('\n')}`;
+      if (aiLines.length) {
+        block += `\n-- ASSISTANT MESSAGES (topic context only — NEVER treat as user intent) --\n${aiLines.join('\n')}`;
+      }
+      return block;
+    }).filter(Boolean).join('\n\n');
 
-### DESIRED INTERNAL REASONING
+    const systemPrompt = `You are a conversation-memory summarization system that works in three mandatory phases.
 
-Before generating the final output, you MUST output a JSON block inside \`\`\`json \`\`\` reasoning about the following structure (this helps you synthesize):
+Do NOT skip any phase. Do NOT jump to the final output immediately.
 
-\`\`\`json
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HOW TO READ THE INPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every conversation block is split into two labelled sections:
+
+  -- USER MESSAGES --
+  -- ASSISTANT MESSAGES --
+
+Read them with different purposes:
+
+USER MESSAGES — read to understand:
+  - What the user is trying to learn, build, or solve
+  - What goals or decisions the user expresses
+  - What problems or errors the user describes
+  - What experience the user mentions
+  - The direction the user is heading
+
+ASSISTANT MESSAGES — read to understand:
+  - What specific concepts were explained
+  - What technical details were discussed
+  - What problems were diagnosed or addressed
+  - What context helps explain the user's situation
+  - What progression or solution approach was discussed
+
+CRITICAL ATTRIBUTION RULE:
+  NEVER write "the user learned X" or "the user decided to use X" based on the AI saying it.
+  The user's intent comes from USER messages.
+  The AI provides context, detail, and depth — not proof of user intent.
+
+Example:
+  USER: I want to learn React.
+  ASSISTANT: You should study components, props, state, hooks, and routing.
+
+  Correct: The user wants to learn React. The conversations cover components, props, state, and hooks.
+  Wrong:   The user wants to learn components, props, state, hooks, and routing.
+  (The list came from the AI recommendation, not from what the user stated.)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE A — UNDERSTAND EACH CONVERSATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For EVERY conversation block, produce one structured entry.
+Read USER MESSAGES first. Then read ASSISTANT MESSAGES for deeper context.
+
+Output a JSON array tagged phase-a:
+
+` + '```' + `phase-a
+[
+  {
+    "conv": 1,
+    "isRelevant": true,
+    "userIntent": "What the user wants or is trying to do — from USER messages only",
+    "userGoal": "Specific goal stated by the USER (empty string if none)",
+    "userProblem": "Problem or error the USER explicitly describes (empty string if none)",
+    "aiContext": "Key concepts explained / problems addressed / approaches discussed by the ASSISTANT",
+    "combinedMeaning": "One sentence combining user intent + AI context to capture what this conversation is really about",
+    "journeyStage": "learning / exploring / implementing / debugging / applying / planning"
+  }
+]
+` + '```' + `
+
+Rules for Phase A:
+  - userIntent, userGoal, userProblem — from USER messages ONLY
+  - aiContext — from ASSISTANT messages; capture the specific concepts, terms, and techniques discussed
+  - combinedMeaning — one specific sentence merging intent + context
+    BAD:  "User asked about state in React."
+    GOOD: "User is learning how React manages component state using useState and the re-render cycle."
+  - isRelevant — false if the conversation is clearly off-topic for the search query
+  - Do NOT copy the user's exact question verbatim. Convert it to meaning.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE B — SYNTHESIZE ACROSS CONVERSATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Look at ALL combinedMeaning entries where isRelevant is true.
+Find the overall pattern, progression, and goal.
+
+Output a JSON object tagged phase-b:
+
+` + '```' + `phase-b
 {
-  "mainTopic": "...",
-  "userIntent": "...",
-  "conceptsOrProblems": ["...", "..."],
-  "overallGoal": "...",
-  "journey": "..."
+  "mainTopic": "The central subject the relevant conversations cluster around",
+  "userPrimaryActivity": "learning / building / debugging / researching / planning",
+  "journeyTitle": "3-5 word title describing the actual journey (NOT just the keyword)",
+  "keyTopics": ["Specific concept or topic — use real technical terms"],
+  "keyProblems": ["Specific problem the USER explicitly described"],
+  "progression": "How the conversations connect and evolve — the narrative thread",
+  "practicalContext": "Real-world application or project context mentioned by the user (empty string if none)",
+  "overallGoal": "One sentence: what the user is ultimately trying to accomplish",
+  "irrelevantConvs": []
 }
-\`\`\`
+` + '```' + `
 
-### FINAL OUTPUT
+Rules for Phase B:
+  - Only use conversations where isRelevant is true
+  - journeyTitle: 3-5 words that NAME the actual journey, not just the keyword
+    Good: "React Learning Journey", "LLM Learning to Implementation",
+          "JWT Authentication Debugging", "Brain Shadow LLM Integration",
+          "Semantic Search Development", "Full-Stack MERN Journey"
+    Bad:  "React", "LLM", "Learning", "Technical Issues", "Programming"
+  - keyTopics: preserve real technical terms (useState, JWT, RAG, embeddings, CORS, etc.)
+    Do NOT replace specific terms with vague phrases like "AI concepts" or "technical issues"
+  - progression: describe how conversations relate — what led to what, how understanding evolved
+  - If conversations represent clearly different journeys, focus on the dominant one
 
-After your JSON reasoning, provide the final summary.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE C — WRITE THE FINAL OUTPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-The final output MUST be exactly ONE natural, flowing paragraph (approx. 2-4 sentences).
+For EACH conversation where isRelevant is true in Phase A, write exactly ONE concise summary.
 
-The summary MUST answer: "What was this user mainly exploring or working on across these conversations, and what were they trying to achieve?"
+FORMAT — each summary must follow this exact two-part structure:
+  [3-5 word Topic Title] — [one clear sentence describing what was discussed, learned, decided, or built]
 
-Do NOT:
-- Do NOT simply concatenate or rewrite user questions or AI responses.
-- Do NOT summarize each conversation independently.
-- Do NOT produce a chronological transcript ("First the user asked... Then the AI...").
-- Do NOT mention every individual question or error unless it is necessary to explain the overall goal.
-- Do NOT hallucinate goals, technologies, or projects that aren't mentioned.
-- Do NOT start sentences with "The user asked", "The user wanted to know", or "The AI responded".
+Separate each summary with a line containing exactly: ||| <conv_number>
+Use the same conv_number as the conversation block in the input.
 
-Example of BAD output (transcript style):
-The user asked what RAG is. Then they asked for an LLM roadmap. Later they wanted to know how to integrate LLM into Brain Shadow and asked about embeddings.
+FORMAT (use exactly this structure):
 
-Example of GOOD output (synthesized):
-The user is learning about Large Language Models (LLMs) from basic concepts to practical implementation. Their discussions progressed from understanding fundamentals like embeddings and RAG toward integrating these capabilities into the Brain Shadow project. Overall, they are focused on building a strong understanding of LLM technology to apply it successfully to their application.`;
+  ||| 1
+  [Topic Title] — [One clear sentence.]
 
+  ||| 2
+  [Topic Title] — [One clear sentence.]
+
+  ... one entry per relevant conversation.
+
+SUMMARY RULES:
+  - The Topic Title: 3-5 words that name the specific subject (not just the search keyword)
+    GOOD: "React Learning Journey", "MERN Stack Setup", "Resume Update for React Roles", "Brain Shadow Backend Work"
+    BAD:  "MERN", "Learning", "Code", "Discussion", "Conversation"
+  - The sentence: describe what was ACTUALLY discussed, worked on, learned, or decided
+  - NEVER copy the user's raw message text or the first sentence of a conversation
+  - NEVER use filler phrases: "Hey", "Absolutely", "Listen", "This conversation is about..."
+  - NEVER attribute AI recommendations to the user as their stated goals
+  - NEVER hallucinate — only use facts present in the conversation
+  - Preserve real technical terms (useState, JWT, MERN, RAG, CORS, etc.)
+  - Only include conversations where isRelevant is true
+  - Use only conv_numbers from the input (do not invent numbers)
+
+EXAMPLES:
+  BAD:  "hey want to start learn react from today Absolutely, Aman. Since you already know..."
+  GOOD: "React Learning Journey — Started learning React to strengthen frontend and MERN skills, building on existing HTML, CSS, and JavaScript knowledge."
+
+  BAD:  "This is a chat No listen, listen, I mostly worked in Brain Shadow..."
+  GOOD: "Brain Shadow Development Experience — Discussed primarily working on the Brain Shadow backend, along with Chrome extension development and frontend/backend integration."
+
+  BAD:  "Motivated Machine Learning Developer with hands-on experience..."
+  GOOD: "Software Engineer Resume Update — Updated the professional summary to emphasize React, Node.js, Python, full-stack development, and AI application experience."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMPLETE WORKED EXAMPLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Search query: LLM
+
+Phase C final output:
+
+||| 1
+RAG Architecture Overview — Explored how Retrieval-Augmented Generation combines vector search with LLM generation to produce context-aware, grounded answers.
+
+||| 2
+Brain Shadow LLM Integration — Focused on integrating an LLM into the Brain Shadow project using embeddings and a vector store for semantic memory search.
+
+||| 3
+LLM Learning Roadmap — Mapped out the full learning path from NLP fundamentals through transformers, fine-tuning, RAG, and agent systems.
+
+||| 4
+Prompt Engineering Deep Dive — Studied how system and user messages shape LLM output and how to guide model behavior through structured instructions.
+
+||| 5
+Embeddings and Semantic Search — Examined how text is converted to numerical vectors for similarity matching and retrieval in LLM-powered pipelines.`;
     const sources = [];
     for (const { conv, relevantMsgs } of scored) {
       if (relevantMsgs.length > 0) {
@@ -433,46 +601,105 @@ The user is learning about Large Language Models (LLMs) from basic concepts to p
     }
 
     let answer;
+    let answerSections = [];
     try {
       const result = await groqService.chat(
         [{ role: 'user', content: `SEARCH QUERY:\n${query}\n\nCONVERSATIONS:\n${context}` }],
         systemPrompt
       );
-      
-      let rawContent = result.content || "";
-      
-      // Extract the JSON block from the final output (and ignore it for the frontend)
-      const jsonRegex = /\`\`\`json[\s\S]*?\`\`\`/i;
-      const match = rawContent.match(jsonRegex);
-      
-      if (match) {
-        // Remove the json block, then trim leading/trailing whitespace
-        answer = rawContent.replace(jsonRegex, '').trim();
-        // Remove any residual markdown markers that might have been left behind
-        answer = answer.replace(/^\s*```[\s\S]*?```\s*/, '').trim();
-      } else {
-        answer = rawContent.trim();
-      }
-      
-      // If the LLM ONLY output the JSON block and nothing else, or if the stripping failed.
-      if (!answer || answer.startsWith('{')) {
-        // the LLM might have messed up and output raw JSON without markdown.
-        // As a fallback, try parsing or regenerating the fallback.
-        try {
-           const parsed = JSON.parse(rawContent.replace(/\`\`\`json/i, '').replace(/\`\`\`/i, '').trim());
-           if (parsed.journey || parsed.overallGoal) {
-             answer = parsed.journey || parsed.overallGoal || buildFallbackAnswer(query, scored);
-           }
-        } catch(e) {
-           answer = buildFallbackAnswer(query, scored);
+
+      let rawContent = result.content || '';
+
+      // Strip reasoning/JSON code blocks (phase-a, phase-b, json, markdown, etc.)
+      const blockRegex = /```(?:phase-a|phase-b|json|markdown|text)?[\s\S]*?```/gi;
+      let phaseC = rawContent.replace(blockRegex, '').replace(/```/g, '').trim();
+
+
+      // Collapse extra blank lines
+      phaseC = phaseC.replace(/\n{3,}/g, '\n\n').trim();
+
+      const parsedSections = [];
+
+      // Strategy 1: Split by ||| markers
+      if (phaseC.includes('|||')) {
+        const parts = phaseC.split(/\|\|\|/);
+        for (const part of parts) {
+          const trimmed = part.trim();
+          if (!trimmed) continue;
+          const match = trimmed.match(/^\[?(\d+)\]?[\:\-\s]*\n?([\s\S]*)$/);
+          if (match) {
+            const convIndex = parseInt(match[1], 10) - 1;
+            const text = match[2].trim();
+            if (text && convIndex >= 0 && convIndex < scored.length) {
+              parsedSections.push({
+                text,
+                convId: scored[convIndex].conv._id.toString(),
+              });
+            }
+          }
         }
       }
+
+      // Strategy 2: Regex matching for ||| N or CONVERSATION N or [N]
+      if (parsedSections.length === 0) {
+        const sectionRegex = /(?:\|\|\|\s*|CONVERSATION\s+|\[CONVERSATION\s*|\[)(\d+)\]?[\:\-\s]*\n?([\s\S]*?)(?=(?:\|\|\|\s*|CONVERSATION\s+|\[CONVERSATION\s*|\[)\d+|$)/gi;
+        let sectionMatch;
+        while ((sectionMatch = sectionRegex.exec(phaseC)) !== null) {
+          const convIndex = parseInt(sectionMatch[1], 10) - 1;
+          const text = sectionMatch[2].replace(/\n{2,}/g, '\n').trim();
+          if (text && convIndex >= 0 && convIndex < scored.length) {
+            parsedSections.push({
+              text,
+              convId: scored[convIndex].conv._id.toString(),
+            });
+          }
+        }
+      }
+
+      // Strategy 3: Paragraph-level fallback — split phaseC by \n\n and map paragraph i to scored[i]
+      if (parsedSections.length === 0 && phaseC) {
+        const paragraphs = phaseC.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+        for (let i = 0; i < paragraphs.length; i++) {
+          const convIndex = Math.min(i, scored.length - 1);
+          const cleanText = paragraphs[i].replace(/^(?:\|\|\|\s*\d+:?|CONVERSATION\s*\d+:?|\[\d+\]:?|\d+[\.\)])\s*/i, '').trim();
+          if (cleanText) {
+            parsedSections.push({
+              text: cleanText,
+              convId: scored[convIndex].conv._id.toString(),
+            });
+          }
+        }
+      }
+
+      if (parsedSections.length > 0) {
+        answerSections = parsedSections;
+        answer = parsedSections.map(s => s.text).join('\n\n');
+      } else {
+        answerSections = buildFallbackAnswer(query, scored);
+        answer = answerSections.map(s => s.text).join('\n\n') || phaseC;
+      }
+
+        // Safety: if nothing remains, try to salvage from phase-b JSON.
+        if (!answer) {
+          try {
+            const phaseBMatch = rawContent.match(/```phase-b([\s\S]*?)```/i);
+            if (phaseBMatch) {
+              const parsed = JSON.parse(phaseBMatch[1].trim());
+              answer = parsed.overallGoal || parsed.progressionOrJourney || buildFallbackAnswer(query, scored);
+            } else {
+              answer = buildFallbackAnswer(query, scored);
+            }
+          } catch (_) {
+            answer = buildFallbackAnswer(query, scored);
+          }
+        }
     } catch (groqErr) {
       logger.error(`[Search] Groq failed: ${groqErr.message}`);
-      answer = buildFallbackAnswer(query, scored);
+      answerSections = buildFallbackAnswer(query, scored);
+      answer = answerSections.map(s => s.text).join('\n\n') || `No usable conversation content was found for "${query}".`;
     }
 
-    res.json({ answer, sources });
+    res.json({ answer, answerSections, sources });
   } catch (err) {
     logger.error(`[Search] ${err.message}`);
     next(err);

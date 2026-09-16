@@ -157,8 +157,12 @@ const clerkLogin = async (req, res, next) => {
     // from Clerk.getToken() (or useSignIn/useSignUp).
     let verified;
     try {
+      const authorizedParties = (process.env.FRONTEND_URL || '')
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean);
       const result = await clerkClient.verifyToken(token, {
-        authorizedParties: [process.env.FRONTEND_URL].filter(Boolean),
+        authorizedParties,
       });
       verified = result;
     } catch (verifyErr) {
