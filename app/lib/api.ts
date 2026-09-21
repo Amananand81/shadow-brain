@@ -88,7 +88,7 @@ export interface AnswerSection {
   convId: string;
 }
 
-export async function searchMemory(query: string, platforms?: string[]): Promise<{ answer: string; answerSections?: AnswerSection[]; sources: MemorySource[] }> {
+export async function searchMemory(query: string, platforms?: string[]): Promise<{ answer: string; answerSections?: AnswerSection[]; sources: MemorySource[]; n8nSummary?: { heading: string; summary: string } | null }> {
   const url = toApiUrl('/api/conversations/search');
   const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

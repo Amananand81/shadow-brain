@@ -1,6 +1,7 @@
 const conversationService = require('../services/conversation.service');
 const enrichmentService = require('../services/enrichment.service');
 const groqService = require('../services/groq.service');
+const n8nService = require('../services/n8n.service');
 const logger = require('../utils/logger');
 
 // Roles that should never be treated as conversation content.
@@ -227,52 +228,7 @@ const getConversationStatus = async (req, res, next) => {
   }
 };
 
-const buildFallbackAnswer = (query, scored) => {
-  // Fallback: generate the best summary we can without calling an LLM.
-  // Priority: conv.title (clean) + enrichment.summary (if available) > enrichment alone > title alone > raw message.
-  const sections = [];
-  const looksLikeFilename = (s) => /.(pdf|docx|txt|xlsx|png|jpg|csv)/i.test(s);
 
-  for (const { conv } of scored) {
-    // Prefer conv.title as the topic label — it's set from the scraped page title and is usually clean.
-    // Fall back to enrichment.topic only if title is absent or looks like a filename.
-    const titleLabel = (conv.title || '').trim();
-    const enrichTopic = (conv.enrichment?.topic || '').trim();
-    const topic = (titleLabel && !looksLikeFilename(titleLabel)) ? titleLabel
-                : (enrichTopic && !looksLikeFilename(enrichTopic)) ? enrichTopic
-                : titleLabel || enrichTopic;
-
-    const enrichmentSummary = (conv.enrichment?.summary || '').trim();
-
-    let text = '';
-
-    if (topic && enrichmentSummary) {
-      // Clean up boilerplate enrichment prefixes, then compose: "Title — summary."
-      const cleanSummary = enrichmentSummary
-        .slice(0, 200)
-        .replace(/^The user (asked|discussed|explored|wanted|started by asking)\s+/i, '')
-        .trim();
-      text = `${topic} — ${cleanSummary}`;
-    } else if (topic) {
-      text = topic;
-    } else {
-      // Last resort: sanitize the first user message
-      const messages = (conv.messages || []);
-      const userMsgs = messages.filter(m => m.role === 'user' && !isMetadataOnlyMessage(m.content));
-      const firstUser = sanitizeMessageContent((userMsgs[0]?.content || '').slice(0, 200));
-      if (firstUser) text = firstUser;
-    }
-
-    if (text) {
-      sections.push({
-        text: text.trim(),
-        convId: conv._id.toString(),
-      });
-    }
-  }
-
-  return sections;
-};
 
 // Normalize a search query for relevance matching: lowercase, strip punctuation,
 // collapse whitespace, and drop trivial stopwords. Returns the meaningful
@@ -602,104 +558,43 @@ Embeddings and Semantic Search — Examined how text is converted to numerical v
 
     let answer;
     let answerSections = [];
+    let n8nHeading = '';
+    let n8nSummaryText = '';
+    let n8nUsed = false;
+
+
+
+    // ── Step 1: Try n8n journey summary ─────────────────────────────────────
     try {
-      const result = await groqService.chat(
-        [{ role: 'user', content: `SEARCH QUERY:\n${query}\n\nCONVERSATIONS:\n${context}` }],
-        systemPrompt
-      );
+      const n8nResult = await n8nService.generateJourneySummary(query, scored);
 
-      let rawContent = result.content || '';
+      if (n8nResult) {
+        // n8n returns { summary, heading }.
+        // Keep heading and summary SEPARATE so the frontend can render them
+        // distinctly (heading as title card, summary as body text).
+        n8nHeading     = (n8nResult.heading  || '').trim();
+        n8nSummaryText = (n8nResult.summary  || '').trim();
 
-      // Strip reasoning/JSON code blocks (phase-a, phase-b, json, markdown, etc.)
-      const blockRegex = /```(?:phase-a|phase-b|json|markdown|text)?[\s\S]*?```/gi;
-      let phaseC = rawContent.replace(blockRegex, '').replace(/```/g, '').trim();
+        const headingText = n8nHeading
+          ? `${n8nHeading} — ${n8nSummaryText}`
+          : n8nSummaryText;
 
-
-      // Collapse extra blank lines
-      phaseC = phaseC.replace(/\n{3,}/g, '\n\n').trim();
-
-      const parsedSections = [];
-
-      // Strategy 1: Split by ||| markers
-      if (phaseC.includes('|||')) {
-        const parts = phaseC.split(/\|\|\|/);
-        for (const part of parts) {
-          const trimmed = part.trim();
-          if (!trimmed) continue;
-          const match = trimmed.match(/^\[?(\d+)\]?[\:\-\s]*\n?([\s\S]*)$/);
-          if (match) {
-            const convIndex = parseInt(match[1], 10) - 1;
-            const text = match[2].trim();
-            if (text && convIndex >= 0 && convIndex < scored.length) {
-              parsedSections.push({
-                text,
-                convId: scored[convIndex].conv._id.toString(),
-              });
-            }
-          }
-        }
+        answer    = headingText;
+        n8nUsed   = true;
+        logger.info(`[Search] Answer generated via n8n (query="${query}")`);
       }
-
-      // Strategy 2: Regex matching for ||| N or CONVERSATION N or [N]
-      if (parsedSections.length === 0) {
-        const sectionRegex = /(?:\|\|\|\s*|CONVERSATION\s+|\[CONVERSATION\s*|\[)(\d+)\]?[\:\-\s]*\n?([\s\S]*?)(?=(?:\|\|\|\s*|CONVERSATION\s+|\[CONVERSATION\s*|\[)\d+|$)/gi;
-        let sectionMatch;
-        while ((sectionMatch = sectionRegex.exec(phaseC)) !== null) {
-          const convIndex = parseInt(sectionMatch[1], 10) - 1;
-          const text = sectionMatch[2].replace(/\n{2,}/g, '\n').trim();
-          if (text && convIndex >= 0 && convIndex < scored.length) {
-            parsedSections.push({
-              text,
-              convId: scored[convIndex].conv._id.toString(),
-            });
-          }
-        }
-      }
-
-      // Strategy 3: Paragraph-level fallback — split phaseC by \n\n and map paragraph i to scored[i]
-      if (parsedSections.length === 0 && phaseC) {
-        const paragraphs = phaseC.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
-        for (let i = 0; i < paragraphs.length; i++) {
-          const convIndex = Math.min(i, scored.length - 1);
-          const cleanText = paragraphs[i].replace(/^(?:\|\|\|\s*\d+:?|CONVERSATION\s*\d+:?|\[\d+\]:?|\d+[\.\)])\s*/i, '').trim();
-          if (cleanText) {
-            parsedSections.push({
-              text: cleanText,
-              convId: scored[convIndex].conv._id.toString(),
-            });
-          }
-        }
-      }
-
-      if (parsedSections.length > 0) {
-        answerSections = parsedSections;
-        answer = parsedSections.map(s => s.text).join('\n\n');
-      } else {
-        answerSections = buildFallbackAnswer(query, scored);
-        answer = answerSections.map(s => s.text).join('\n\n') || phaseC;
-      }
-
-        // Safety: if nothing remains, try to salvage from phase-b JSON.
-        if (!answer) {
-          try {
-            const phaseBMatch = rawContent.match(/```phase-b([\s\S]*?)```/i);
-            if (phaseBMatch) {
-              const parsed = JSON.parse(phaseBMatch[1].trim());
-              answer = parsed.overallGoal || parsed.progressionOrJourney || buildFallbackAnswer(query, scored);
-            } else {
-              answer = buildFallbackAnswer(query, scored);
-            }
-          } catch (_) {
-            answer = buildFallbackAnswer(query, scored);
-          }
-        }
-    } catch (groqErr) {
-      logger.error(`[Search] Groq failed: ${groqErr.message}`);
-      answerSections = buildFallbackAnswer(query, scored);
-      answer = answerSections.map(s => s.text).join('\n\n') || `No usable conversation content was found for "${query}".`;
+    } catch (n8nErr) {
+      // Should not reach here (n8nService catches internally), but guard anyway.
+      logger.warn(`[Search] n8n service threw unexpectedly: ${n8nErr.message}`);
     }
+    // ─────────────────────────────────────────────────────────────────────────
 
-    res.json({ answer, answerSections, sources });
+    res.json({
+      answer: n8nHeading && n8nSummaryText ? `${n8nHeading} — ${n8nSummaryText}` : n8nSummaryText,
+      answerSections,
+      sources,
+      n8nSummary: n8nUsed ? { heading: n8nHeading, summary: n8nSummaryText } : null,
+    });
   } catch (err) {
     logger.error(`[Search] ${err.message}`);
     next(err);

@@ -225,6 +225,7 @@ interface SearchResultsPanelProps {
   aiAnswer: string;
   aiSources: MemorySource[];
   answerSections?: AnswerSection[];
+  n8nSummary?: { heading: string; summary: string } | null;
   onRefClick?: (convId: string) => void;
   pinnedNodeId: number | null;
   onUnpin: () => void;
@@ -238,6 +239,7 @@ function SearchResultsPanel({
   aiAnswer,
   aiSources,
   answerSections,
+  n8nSummary,
   onRefClick,
   pinnedNodeId,
   onUnpin,
@@ -323,6 +325,91 @@ function SearchResultsPanel({
               <div className="flex items-center gap-2 py-2">
                 <Loader2 size={13} className="animate-spin" style={{ color: "var(--text-muted)" }} />
                 <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>Searching memory…</span>
+              </div>
+            ) : n8nSummary ? (
+              /* ── n8n output: dedicated heading + summary card ── */
+              <div className="flex flex-col gap-3">
+                <div
+                  className="rounded-xl p-4 flex flex-col gap-3"
+                  style={{
+                    background: "linear-gradient(135deg, rgba(139,92,246,0.08) 0%, rgba(79,138,255,0.06) 100%)",
+                    border: "1px solid rgba(139,92,246,0.28)",
+                  }}
+                >
+                  {/* n8n badge */}
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
+                      style={{
+                        background: "rgba(139,92,246,0.18)",
+                        border: "1px solid rgba(139,92,246,0.4)",
+                        color: "#c4b5fd",
+                      }}
+                    >
+                      n8n
+                    </span>
+                    <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>AI-generated journey summary</span>
+                  </div>
+
+                  {/* Heading */}
+                  {n8nSummary.heading && (
+                    <p
+                      className="text-[14px] font-bold leading-snug"
+                      style={{ color: "#c4b5fd" }}
+                    >
+                      {n8nSummary.heading}
+                    </p>
+                  )}
+
+                  {/* Summary body */}
+                  <p
+                    className="text-[13px] leading-relaxed"
+                    style={{ color: "var(--text-primary)", whiteSpace: "pre-wrap" }}
+                  >
+                    {n8nSummary.summary}
+                  </p>
+
+                </div>
+
+                {/* Sources list */}
+                {aiSources.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+                      Sources ({aiSources.length})
+                    </span>
+                    {aiSources.map((src) => {
+                      const color = src.platform ? PLATFORM_COLORS[src.platform] ?? "#4f8aff" : "#4f8aff";
+                      const label = src.platform ? PLATFORM_LABELS[src.platform] ?? src.platform : "";
+                      return (
+                        <div
+                          key={src.id}
+                          className="rounded-lg px-3 py-2"
+                          style={{
+                            background: `${color}10`,
+                            border: `1px solid ${color}28`,
+                          }}
+                        >
+                          <p className="text-[10px] font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                            {src.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {label && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}>
+                                {label}
+                              </span>
+                            )}
+                            {src.date && (
+                              <span className="flex items-center gap-1 text-[9px]" style={{ color: "var(--text-muted)" }}>
+                                <Clock size={8} />
+                                {src.date}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : (aiAnswer || (answerSections && answerSections.length > 0)) ? (
               <>
@@ -580,20 +667,44 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
   const [aiAnswer, setAiAnswer] = useState<string>("");
   const [aiSources, setAiSources] = useState<MemorySource[]>([]);
   const [answerSections, setAnswerSections] = useState<AnswerSection[]>([]);
+  const [n8nSummary, setN8nSummary] = useState<{ heading: string; summary: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const aiDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const kw = searchKeyword.trim().toLowerCase();
 
-  // Reopen the results panel whenever a new search is explicitly triggered.
+  // committedKw only updates when the user explicitly submits (Enter/button).
+  // All graph node highlighting and session matching is gated on this so
+  // typing does not blink nodes or trigger any UI changes mid-word.
+  const [committedKw, setCommittedKw] = useState<string>("");
+
+  // Snapshot of the query at submit time — used by the search API effect so
+  // it does NOT re-run on every keystroke (only when searchTriggerKey changes).
+  const submittedKwRef = useRef<string>("");
+  // Track the last searchTriggerKey we processed so the committedKw effect
+  // only runs its body when a NEW submission arrives, not on every keystroke.
+  const lastProcessedTriggerKey = useRef<number>(0);
+
+  // When the user explicitly submits a search: snapshot the query into a ref,
+  // update committedKw, and reopen panel.
+  // kw is in deps so React doesn't complain, but we guard with
+  // lastProcessedTriggerKey so the body only executes on a new submission.
   useEffect(() => {
-    if (searchTriggerKey > 0 && kw.length >= 2) {
+    if (searchTriggerKey === 0) return;
+    if (searchTriggerKey === lastProcessedTriggerKey.current) return; // keystroke changed kw, not a new submit
+    lastProcessedTriggerKey.current = searchTriggerKey;
+    if (kw.length >= 2) {
+      submittedKwRef.current = kw;
+      setCommittedKw(kw);
       setPanelDismissed(false);
+    } else {
+      submittedKwRef.current = "";
+      setCommittedKw("");
     }
   }, [searchTriggerKey, kw]);
 
   const matchingSessions = useMemo(() => {
-    if (kw.length < 2) return [];
+    if (committedKw.length < 2) return [];
 
     const STOP = new Set([
       "the","a","an","is","in","of","and","or","to","for","with","on","at",
@@ -605,7 +716,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
       "using","used","make","made","want","need","help","please","give",
     ]);
 
-    const rawWords = kw.split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
+    const rawWords = committedKw.split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
     if (rawWords.length === 0) return [];
 
     const stemmedRaw  = rawWords.map(stem);
@@ -659,7 +770,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
       .filter(x => x.matched >= minMatchCount * 0.75) // allow fractional tolerance
       .sort((a, b) => b.score - a.score)
       .map(x => x.s);
-  }, [sessions, kw]);
+  }, [sessions, committedKw]);
 
   // Build both the color map (for ObsidianGraph) and a sessions lookup (for the panel)
   // in one pass over matchingSessions so they're always in sync.
@@ -685,25 +796,32 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
   const nodeSessionsMapRef = useRef(nodeSessionsMap);
   nodeSessionsMapRef.current = nodeSessionsMap;
 
-  // Clear previous search state when the input is empty or too short.
+  // Clear previous search state when the committed keyword is cleared/too short.
   useEffect(() => {
-    if (kw.length < 2) {
+    if (committedKw.length < 2) {
       setPinnedNodeId(null);
       setClickedSessions([]);
       setAiAnswer("");
       setAiSources([]);
       setAnswerSections([]);
+      setN8nSummary(null);
       onAiSourcesChange?.([]);
       setAiLoading(false);
       onAiLoadingChange?.(false);
       if (aiDebounce.current) clearTimeout(aiDebounce.current);
     }
-  }, [kw, onAiSourcesChange, onAiLoadingChange]);
+  }, [committedKw, onAiSourcesChange, onAiLoadingChange]);
 
   // Run the existing memory search only when the user explicitly submits.
+  // IMPORTANT: kw / searchKeyword are intentionally NOT in the dep array.
+  // They change on every keystroke; we must only re-run when searchTriggerKey
+  // increments (i.e. the user pressed Enter / clicked the search button).
+  // The submitted query is read from submittedKwRef which is snapshotted at
+  // submit time in the committedKw effect above.
   useEffect(() => {
     if (searchTriggerKey === 0) return;
-    if (kw.length < 2) {
+    const submittedKw = submittedKwRef.current;
+    if (submittedKw.length < 2) {
       setAiLoading(false);
       onAiLoadingChange?.(false);
       return;
@@ -716,19 +834,21 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
 
     const runSearch = async () => {
       try {
-        const result = await searchMemory(searchKeyword.trim(), selectedAgents);
+        const result = await searchMemory(submittedKw, selectedAgents);
         if (cancelled) return;
         setAiAnswer(result.answer);
         setAiSources(result.sources);
         setAnswerSections(result.answerSections ?? []);
+        setN8nSummary(result.n8nSummary ?? null);
         onAiSourcesChange?.(result.sources);
-        onAiAnswerReady?.(searchKeyword.trim().toLowerCase(), result.answer);
+        onAiAnswerReady?.(submittedKw, result.answer);
       } catch (err) {
         console.error('[GraphCenter] search failed', err);
         if (cancelled) return;
         setAiAnswer("");
         setAiSources([]);
         setAnswerSections([]);
+        setN8nSummary(null);
         onAiSourcesChange?.([]);
       } finally {
         if (!cancelled) {
@@ -743,7 +863,8 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
     return () => {
       cancelled = true;
     };
-  }, [searchTriggerKey, kw, searchKeyword, selectedAgents, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTriggerKey, selectedAgents, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange]);
 
   // Clicking a node: pin to that node's sessions and open the conversation popup.
   const handleNodeClick = useCallback((nodeId: number, _keyword: string) => {
@@ -776,18 +897,8 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
     setClickedSessions([]);
   }, []);
 
-  const prevKw = useRef(kw);
-  useEffect(() => {
-    if (prevKw.current !== kw) {
-      prevKw.current = kw;
-      if (panelDismissed) {
-        setPanelDismissed(false);
-      }
-    }
-  }, [kw, panelDismissed]);
-
   // Panel is visible only after the user explicitly submits a search.
-  const showHistory = searchTriggerKey > 0 && kw.length >= 2 && !panelDismissed;
+  const showHistory = searchTriggerKey > 0 && committedKw.length >= 2 && !panelDismissed;
 
   // Use LLM-selected sources to filter sessions; use convId (conversation) for session matching
   const aiSourceIds = useMemo(() => new Set(aiSources.map(s => s.convId ?? s.id)), [aiSources]);
@@ -812,13 +923,14 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
         aiAnswer={aiAnswer}
         aiSources={aiSources}
         answerSections={answerSections}
+        n8nSummary={n8nSummary}
         onRefClick={handleRefClick}
         pinnedNodeId={pinnedNodeId}
         onUnpin={handleUnpin}
         onDismiss={handleDismissPanel}
       />
     );
-  }, [showHistory, displayedSessions, searchKeyword, aiLoading, aiAnswer, aiSources, answerSections, pinnedNodeId, handleUnpin, handleDismissPanel]);
+  }, [showHistory, displayedSessions, searchKeyword, aiLoading, aiAnswer, aiSources, answerSections, n8nSummary, pinnedNodeId, handleUnpin, handleDismissPanel]);
 
   useEffect(() => {
     onResultsPanelContentChange?.(resultsPanelContent);
