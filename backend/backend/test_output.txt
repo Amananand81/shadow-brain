@@ -1,0 +1,34 @@
+Γùç injected env (13) from .env // tip: Γîÿ multiple files { path: ['.env.local', '.env'] }
+Γùç injected env (0) from .env.local // tip: Γùê encrypted .env [www.dotenvx.com]
+=== STARTING JOURNEY SUMMARY TESTS ===
+
+
+Testing Query: "What do I know about LLM?"
+[31merror[39m: [CodeSummary] Error generating code-based journey summary: 401 Invalid API Key {"timestamp":"2026-09-23T17:25:37.062Z"}
+Result Heading: undefined
+Result Summary: undefined
+--------------------------------------------------
+
+Testing Query: "Where did I use LLM in Brain Shadow?"
+[31merror[39m: [CodeSummary] Error generating code-based journey summary: 401 Invalid API Key {"timestamp":"2026-09-23T17:25:38.430Z"}
+Result Heading: undefined
+Result Summary: undefined
+--------------------------------------------------
+
+Testing Query: "What did I learn about React?"
+[31merror[39m: [CodeSummary] Error generating code-based journey summary: 401 Invalid API Key {"timestamp":"2026-09-23T17:25:38.727Z"}
+Result Heading: undefined
+Result Summary: undefined
+--------------------------------------------------
+
+Testing Query: "How did I implement search in Brain Shadow?"
+[31merror[39m: [CodeSummary] Error generating code-based journey summary: 401 Invalid API Key {"timestamp":"2026-09-23T17:25:39.059Z"}
+Result Heading: undefined
+Result Summary: undefined
+--------------------------------------------------
+
+Testing Query: "Random completely unrelated topic about cooking"
+[31merror[39m: [CodeSummary] Error generating code-based journey summary: 401 Invalid API Key {"timestamp":"2026-09-23T17:25:39.337Z"}
+Result Heading: undefined
+Result Summary: undefined
+--------------------------------------------------

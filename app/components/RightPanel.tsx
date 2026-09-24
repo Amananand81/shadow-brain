@@ -19,6 +19,7 @@ interface RightPanelProps {
   onOpenPanel?: () => void;
   searchHistory: SearchRecord[];
   onHistoryUpdate: (record: SearchRecord) => void;
+  onDeleteHistory?: (keyword: string) => void;
   onForgetPast: () => void;
   isSearchLoading?: boolean;
   resultsPanelContent?: ReactNode;
@@ -58,6 +59,7 @@ export function RightPanel({
   onOpenPanel,
   searchHistory,
   onHistoryUpdate,
+  onDeleteHistory,
   onForgetPast,
   isSearchLoading = false,
   resultsPanelContent,
@@ -296,11 +298,22 @@ export function RightPanel({
                               </p>
                             )}
                           </div>
-                          <ChevronRight
-                            size={13}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            style={{ color: "var(--text-muted)" }}
-                          />
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteHistory?.(record.keyword);
+                              }}
+                              className="p-1 rounded transition-colors hover:bg-[rgba(255,255,255,0.1)]"
+                              title="Delete search from history"
+                            >
+                              <X size={13} style={{ color: "var(--text-muted)" }} />
+                            </button>
+                            <ChevronRight
+                              size={13}
+                              style={{ color: "var(--text-muted)" }}
+                            />
+                          </div>
                         </motion.button>
                       );
                     })}

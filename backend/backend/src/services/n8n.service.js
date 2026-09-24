@@ -15,8 +15,8 @@
 
 const logger = require('../utils/logger');
 
-const WEBHOOK_URL  = process.env.N8N_SUMMARY_WEBHOOK_URL;
-const TIMEOUT_MS   = 25_000; // 25 s — generous enough for cold-start LLM calls
+const WEBHOOK_URL = process.env.N8N_SUMMARY_WEBHOOK_URL;
+const TIMEOUT_MS = 25_000; // 25 s — generous enough for cold-start LLM calls
 
 /**
  * Build the structured payload that n8n expects.
@@ -34,7 +34,7 @@ function buildPayload(query, scored) {
     const messages = msgs
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({
-        role:    m.role === 'user' ? 'user' : 'assistant',
+        role: m.role === 'user' ? 'user' : 'assistant',
         // Trim content so the n8n payload stays manageable.
         content: (m.content || '').slice(0, m.role === 'user' ? 400 : 300).trim(),
       }))
@@ -42,8 +42,8 @@ function buildPayload(query, scored) {
 
     return {
       conversationId: conv._id.toString(),
-      platform:       conv.platform   || 'unknown',
-      title:          conv.title      || '',
+      platform: conv.platform || 'unknown',
+      title: conv.title || '',
       messages,
     };
   });
@@ -80,10 +80,10 @@ async function generateJourneySummary(query, scored) {
     logger.info(`[n8n] Calling webhook for query="${query}" conversations=${payload.conversations.length}`);
 
     const response = await fetch(WEBHOOK_URL, {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
-      signal:  controller.signal,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     clearTimeout(timer);
@@ -116,8 +116,27 @@ async function generateJourneySummary(query, scored) {
           parsedPayload = JSON.parse(raw.output);
           console.log('[n8n DEBUG] parsed output string → heading:', parsedPayload.heading, '| summary length:', (parsedPayload.summary || '').length);
         } catch (jsonErr) {
-          logger.warn(`[n8n] raw.output is not valid JSON: ${jsonErr.message}`);
-          return null;
+          logger.warn(`[n8n] raw.output is not valid JSON, parsing as plain text format.`);
+          
+          const text = raw.output.trim();
+          let extractedHeading = '';
+          let extractedSummary = text;
+
+          const headingMatch = text.match(/Heading:\s*/i);
+          const summaryMatch = text.match(/Summary:\s*/i);
+
+          if (headingMatch && summaryMatch && headingMatch.index < summaryMatch.index) {
+            extractedHeading = text.substring(headingMatch.index + headingMatch[0].length, summaryMatch.index).trim();
+            extractedSummary = text.substring(summaryMatch.index + summaryMatch[0].length).trim();
+          } else if (headingMatch && !summaryMatch) {
+            extractedHeading = text.substring(headingMatch.index + headingMatch[0].length).trim();
+            extractedSummary = '';
+          } else if (!headingMatch && summaryMatch) {
+            extractedSummary = text.substring(summaryMatch.index + summaryMatch[0].length).trim();
+            extractedHeading = text.substring(0, summaryMatch.index).trim();
+          }
+
+          parsedPayload = { heading: extractedHeading, summary: extractedSummary };
         }
       } else if (typeof raw.output === 'object' && raw.output !== null) {
         parsedPayload = raw.output;

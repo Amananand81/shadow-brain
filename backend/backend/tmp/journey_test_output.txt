@@ -1,0 +1,57 @@
+Γùç injected env (13) from .env // tip: Γùê secrets for agents [www.dotenvx.com]
+
+=== JOURNEY SUMMARY SERVICE ΓÇö LIVE TEST ===
+
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "What do I know about LLM?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="What do I know about LLM?" {"timestamp":"2026-09-23T19:18:03.494Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 401 Invalid API Key ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:03.723Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=llama-3.3-70b) for query="What do I know about LLM?" {"timestamp":"2026-09-23T19:18:03.724Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 404 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:04.536Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-23T19:18:04.537Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "Where did I use LLM in Brain Shadow?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="Where did I use LLM in Brain Shadow?" {"timestamp":"2026-09-23T19:18:04.537Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 401 Invalid API Key ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:04.583Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=llama-3.3-70b) for query="Where did I use LLM in Brain Shadow?" {"timestamp":"2026-09-23T19:18:04.583Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 404 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:04.884Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-23T19:18:04.884Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "What did I learn about React?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="What did I learn about React?" {"timestamp":"2026-09-23T19:18:04.885Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 401 Invalid API Key ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:04.940Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=llama-3.3-70b) for query="What did I learn about React?" {"timestamp":"2026-09-23T19:18:04.940Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 404 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:05.243Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-23T19:18:05.243Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "How did I implement search in Brain Shadow?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="How did I implement search in Brain Shadow?" {"timestamp":"2026-09-23T19:18:05.244Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 401 Invalid API Key ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:05.295Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=llama-3.3-70b) for query="How did I implement search in Brain Shadow?" {"timestamp":"2026-09-23T19:18:05.295Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 404 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:05.654Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-23T19:18:05.654Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "Tell me about cooking recipes"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="Tell me about cooking recipes" {"timestamp":"2026-09-23T19:18:05.655Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 401 Invalid API Key ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:05.702Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=llama-3.3-70b) for query="Tell me about cooking recipes" {"timestamp":"2026-09-23T19:18:05.702Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 404 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-23T19:18:06.064Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-23T19:18:06.064Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+
+=== TEST COMPLETE ===

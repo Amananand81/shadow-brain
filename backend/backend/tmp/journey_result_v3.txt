@@ -1,0 +1,108 @@
+Γùç injected env (14) from .env // tip: Γîÿ multiple files { path: ['.env.local', '.env'] }
+
+=== JOURNEY SUMMARY SERVICE ΓÇö LIVE TEST ===
+
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "What do I know about LLM?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=openai/gpt-oss-120b) for query="What do I know about LLM?" {"timestamp":"2026-09-24T09:16:08.520Z"}
+[32minfo[39m: [CodeSummary] groq succeeded. heading="LLM Knowledge Overview" {"timestamp":"2026-09-24T09:16:10.862Z"}
+
+≡ƒôî HEADING:
+LLM Knowledge Overview
+
+≡ƒôä SUMMARY:
+The user understands that a Large Language Model is a neural network trained on massive text datasets.  
+They recognize that LLMs rely on transformer architecture to capture longΓÇærange dependencies.  
+They know the core operation is nextΓÇætoken prediction, enabling generation of coherent sentences.  
+The user is aware that training involves selfΓÇæsupervised learning without explicit labeling.  
+They have identified practical applications of LLMs within the Brain Shadow system.  
+In Brain Shadow, the user integrated Groq LLMs to enrich imported conversations by extracting structured metadata.  
+They also employed the same models to power semantic search, producing journey summaries from retrieved dialogues.  
+Additionally, the user uses an LLMΓÇædriven chat interface as an interactive memory assistant.  
+Their grasp includes the distinction between model inference for extraction, summarization, and conversational interaction.  
+Overall, the userΓÇÖs knowledge spans theoretical foundations, architectural details, and concrete implementation of LLMs in their own product.
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "Where did I use LLM in Brain Shadow?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=openai/gpt-oss-120b) for query="Where did I use LLM in Brain Shadow?" {"timestamp":"2026-09-24T09:16:10.863Z"}
+[32minfo[39m: [CodeSummary] groq succeeded. heading="LLM Integration Points" {"timestamp":"2026-09-24T09:16:12.584Z"}
+
+≡ƒôî HEADING:
+LLM Integration Points
+
+≡ƒôä SUMMARY:
+The user incorporated GroqΓÇæbased large language models into Brain ShadowΓÇÖs backend.  
+They employed an LLM during the enrichment stage to parse imported conversations and automatically generate metadata such as topics, entities, and sentiment.  
+This metadata was stored alongside the raw text to improve later retrieval.  
+For search, the user leveraged the LLM to produce semantic journey summaries that distilled the essence of retrieved conversation clusters.  
+These summaries powered a more contextΓÇæaware ranking algorithm within the memory assistant.  
+The chat interface itself was driven by the same LLM, enabling users to ask naturalΓÇælanguage questions about their stored memories.  
+The assistant responded by querying the indexed data and composing answers onΓÇætheΓÇæfly.  
+Throughout, the LLM acted as the core reasoning engine linking raw conversation data to userΓÇæfriendly output.  
+Consequently, the userΓÇÖs Brain Shadow system combined enrichment, search, and interactive chat through a unified LLM service.
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "What did I learn about React?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=openai/gpt-oss-120b) for query="What did I learn about React?" {"timestamp":"2026-09-24T09:16:12.585Z"}
+[32minfo[39m: [CodeSummary] groq succeeded. heading="React Learning Journey" {"timestamp":"2026-09-24T09:16:14.609Z"}
+
+≡ƒôî HEADING:
+React Learning Journey
+
+≡ƒôä SUMMARY:
+The user began by identifying the fundamental building blocks of React, recognizing that components form the UIΓÇÖs reusable units.  
+They learned that props serve as inputs that allow data to flow from parent to child components.  
+State was understood as internal data that drives interactive behavior within a component.  
+The concept of hooks was introduced, enabling functional components to manage state and side effects without class syntax.  
+After mastering these basics, the user explored clientΓÇæside navigation using React Router to handle multiΓÇæpage applications.  
+They then extended their knowledge to serverΓÇæside rendering by adopting Next.js as a framework built on top of React.  
+While working on the Brain Shadow frontend, the user implemented Next.js versionΓÇ»15 and needed to grasp its new App Router architecture.  
+They discovered that the App Router replaces the traditional pages directory with an app directory, organizing routes as nested folders.  
+The user learned that React Server Components are the default rendering mode in the App Router, allowing data fetching on the server without sending unnecessary JavaScript to the client.  
+Additionally, they understood how layout files define shared UI structures and how loading.tsx files provide declarative loading states for each route segment.
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "How did I implement search in Brain Shadow?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=openai/gpt-oss-120b) for query="How did I implement search in Brain Shadow?" {"timestamp":"2026-09-24T09:16:14.610Z"}
+[32minfo[39m: [CodeSummary] groq succeeded. heading="Search Implementation Overview" {"timestamp":"2026-09-24T09:16:16.482Z"}
+
+≡ƒôî HEADING:
+Search Implementation Overview
+
+≡ƒôä SUMMARY:
+The user integrated GroqΓÇÖs large language model as the core engine behind Brain ShadowΓÇÖs search feature.  
+Search began by pulling stored conversations that matched the userΓÇÖs query using a basic retrieval step.  
+Retrieved snippets were then fed to the Groq LLM, which transformed raw matches into concise, semantic journey summaries.  
+These summaries highlighted the most relevant concepts and decisions, allowing the user to quickly grasp the context of each result.  
+The LLMΓÇægenerated summaries were displayed in the frontend, enabling a more intuitive navigation of past interactions.  
+The implementation leveraged the same LLM that powered enrichment and chat, ensuring consistent language understanding across features.  
+By converting raw data into narrative summaries, the search avoided presenting raw text dumps and instead offered meaningful insights.  
+The userΓÇÖs design linked the search pipeline to the Next.js 15 app, rendering the summaries within the App Router layout.  
+Overall, the approach combined retrieval with LLMΓÇædriven summarization to deliver a semantic, userΓÇæfriendly search experience.
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "Tell me about cooking recipes"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=openai/gpt-oss-120b) for query="Tell me about cooking recipes" {"timestamp":"2026-09-24T09:16:16.483Z"}
+[32minfo[39m: [CodeSummary] groq succeeded. heading="No Recipe Data" {"timestamp":"2026-09-24T09:16:24.922Z"}
+
+≡ƒôî HEADING:
+No Recipe Data
+
+≡ƒôä SUMMARY:
+The userΓÇÖs stored conversations contain no discussion of cooking or recipe topics.  
+All retrieved entries focus on technical subjects such as large language models and their integration in BrainΓÇ»Shadow.  
+Another conversation centers on learning React, component architecture, and the Next.js App Router.  
+There are no mentions of ingredients, cooking techniques, or specific dishes.  
+Consequently, the userΓÇÖs memory does not currently hold any recipe information.  
+If the user wishes to capture culinary knowledge, they would need to add relevant dialogues or notes.  
+At present, the system cannot provide a cookingΓÇærecipe summary because none exists in the history.  
+Future queries about recipes will be answerable once such content is recorded.
+
+
+=== TEST COMPLETE ===

@@ -345,6 +345,10 @@ export default function Home() {
     setIsMemorySearchLoading(loading);
   }, []);
 
+  const handleDeleteHistory = useCallback((keyword: string) => {
+    setSearchHistory((prev) => prev.filter((r) => r.keyword !== keyword));
+  }, []);
+
   // Hooks must be called unconditionally — before any early returns
   const sortedSessions = useMemo(
     () => [...sessions].sort((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime()),
@@ -432,6 +436,7 @@ export default function Home() {
           onOpenPanel={() => setPanelResetKey((k) => k + 1)}
           searchHistory={searchHistory}
           onHistoryUpdate={handleHistoryUpdate}
+          onDeleteHistory={handleDeleteHistory}
           onForgetPast={handleForgetPast}
           isSearchLoading={isMemorySearchLoading}
           resultsPanelContent={resultsPanelContent}

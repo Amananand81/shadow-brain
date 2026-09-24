@@ -12,6 +12,7 @@ router.get('/:id/status',   controller.getConversationStatus);
 
 // Memory search
 router.post('/search',      controller.searchConversations);
+router.post('/search/code-summary', controller.testCodeSummary);
 
 // Write endpoints
 router.post('/',            controller.createConversation);

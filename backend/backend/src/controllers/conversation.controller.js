@@ -2,6 +2,7 @@ const conversationService = require('../services/conversation.service');
 const enrichmentService = require('../services/enrichment.service');
 const groqService = require('../services/groq.service');
 const n8nService = require('../services/n8n.service');
+const journeySummaryService = require('../services/journeySummary.service');
 const logger = require('../utils/logger');
 
 // Roles that should never be treated as conversation content.
@@ -561,8 +562,7 @@ Embeddings and Semantic Search — Examined how text is converted to numerical v
     let n8nHeading = '';
     let n8nSummaryText = '';
     let n8nUsed = false;
-
-
+    let codeSummaryUsed = false;
 
     // ── Step 1: Try n8n journey summary ─────────────────────────────────────
     try {
@@ -589,14 +589,71 @@ Embeddings and Semantic Search — Examined how text is converted to numerical v
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // ── Step 2: Code-based fallback when n8n is unavailable ─────────────────
+    // This runs ONLY when n8n returned null (e.g. Docker/n8n not running).
+    // n8n code above is NOT modified. journeySummaryService mirrors the same
+    // prompt and returns { heading, summary } in the same shape.
+    if (!n8nUsed) {
+      try {
+        logger.info(`[CODE-SUMMARY] n8n unavailable — calling code-based summary for query="${query}"`);
+        console.log(`[CODE-SUMMARY] Starting code-based generation. Relevant conversations: ${scored.length}`);
+
+        const codeResult = await journeySummaryService.generateJourneySummary(query, scored);
+
+        if (codeResult && (codeResult.heading || codeResult.summary)) {
+          n8nHeading     = (codeResult.heading || '').trim();
+          n8nSummaryText = (codeResult.summary || '').trim();
+          answer         = n8nHeading ? `${n8nHeading} — ${n8nSummaryText}` : n8nSummaryText;
+          codeSummaryUsed = true;
+          console.log(`[CODE-SUMMARY] Success. heading="${n8nHeading}" summary_length=${n8nSummaryText.length}`);
+          logger.info(`[CODE-SUMMARY] Answer generated via code-based service (query="${query}")`);
+        } else {
+          console.warn(`[CODE-SUMMARY] Service returned null or empty result for query="${query}"`);
+        }
+      } catch (codeErr) {
+        console.error(`[CODE-SUMMARY] ERROR: ${codeErr.message}`);
+        console.error(`[CODE-SUMMARY] STACK: ${codeErr.stack}`);
+        logger.error(`[CODE-SUMMARY] Code-based summary failed: ${codeErr.message}`);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const summaryUsed = n8nUsed || codeSummaryUsed;
+
+    console.log(`[CODE-SUMMARY] FINAL RESPONSE — n8nUsed=${n8nUsed} codeSummaryUsed=${codeSummaryUsed} heading="${n8nHeading}" summary_length=${n8nSummaryText.length}`);
+
     res.json({
       answer: n8nHeading && n8nSummaryText ? `${n8nHeading} — ${n8nSummaryText}` : n8nSummaryText,
       answerSections,
       sources,
-      n8nSummary: n8nUsed ? { heading: n8nHeading, summary: n8nSummaryText } : null,
+      // Always use n8nSummary field — frontend renders this as the premium heading+summary card.
+      // This field is populated by either n8n (when running) or code-based service (when n8n is off).
+      n8nSummary: summaryUsed ? { heading: n8nHeading, summary: n8nSummaryText } : null,
     });
   } catch (err) {
     logger.error(`[Search] ${err.message}`);
+    next(err);
+  }
+};
+
+const testCodeSummary = async (req, res, next) => {
+  try {
+    const { query, conversations } = req.body;
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ message: 'query is required' });
+    }
+
+    // Wrap raw input to match the normal 'scored' structure.
+    const scored = (conversations || []).map(conv => ({
+      conv,
+      score: 1,
+      relevantMsgs: []
+    }));
+
+    const result = await journeySummaryService.generateJourneySummary(query, scored);
+    res.json(result || { heading: '', summary: '' });
+  } catch (err) {
+    logger.error(`[TestCodeSummary] ${err.message}`);
     next(err);
   }
 };
@@ -608,4 +665,5 @@ module.exports = {
   getConversationById,
   getConversationStatus,
   searchConversations,
+  testCodeSummary,
 };

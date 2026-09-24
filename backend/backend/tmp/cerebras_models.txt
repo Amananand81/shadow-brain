@@ -1,0 +1,2 @@
+Γùç injected env (13) from .env // tip: Γîü auth for agents [www.vestauth.com]
+["qwen-3.8-27b","gpt-oss-120b"]

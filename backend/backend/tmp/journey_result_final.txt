@@ -1,0 +1,57 @@
+Γùç injected env (13) from .env // tip: Γùê secrets for agents [www.dotenvx.com]
+
+=== JOURNEY SUMMARY SERVICE ΓÇö LIVE TEST ===
+
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "What do I know about LLM?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="What do I know about LLM?" {"timestamp":"2026-09-24T09:14:52.770Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 404 The model `llama-3.1-8b-instant` does not exist or you do not have access to it. ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:53.332Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=gpt-oss-120b) for query="What do I know about LLM?" {"timestamp":"2026-09-24T09:14:53.333Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 402 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:53.839Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-24T09:14:53.840Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "Where did I use LLM in Brain Shadow?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="Where did I use LLM in Brain Shadow?" {"timestamp":"2026-09-24T09:14:53.841Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 404 The model `llama-3.1-8b-instant` does not exist or you do not have access to it. ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:53.975Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=gpt-oss-120b) for query="Where did I use LLM in Brain Shadow?" {"timestamp":"2026-09-24T09:14:53.975Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 402 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:54.351Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-24T09:14:54.352Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "What did I learn about React?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="What did I learn about React?" {"timestamp":"2026-09-24T09:14:54.353Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 404 The model `llama-3.1-8b-instant` does not exist or you do not have access to it. ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:54.455Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=gpt-oss-120b) for query="What did I learn about React?" {"timestamp":"2026-09-24T09:14:54.455Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 402 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:54.797Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-24T09:14:54.797Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "How did I implement search in Brain Shadow?"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="How did I implement search in Brain Shadow?" {"timestamp":"2026-09-24T09:14:54.797Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 404 The model `llama-3.1-8b-instant` does not exist or you do not have access to it. ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:54.901Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=gpt-oss-120b) for query="How did I implement search in Brain Shadow?" {"timestamp":"2026-09-24T09:14:54.901Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 402 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:55.220Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-24T09:14:55.220Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+QUERY: "Tell me about cooking recipes"
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+[32minfo[39m: [CodeSummary] Calling groq (model=llama-3.1-8b-instant) for query="Tell me about cooking recipes" {"timestamp":"2026-09-24T09:14:55.221Z"}
+[33mwarn[39m: [CodeSummary] groq failed: 404 The model `llama-3.1-8b-instant` does not exist or you do not have access to it. ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:55.326Z"}
+[32minfo[39m: [CodeSummary] Calling cerebras (model=gpt-oss-120b) for query="Tell me about cooking recipes" {"timestamp":"2026-09-24T09:14:55.326Z"}
+[33mwarn[39m: [CodeSummary] cerebras failed: 402 status code (no body) ΓÇö trying next provider. {"timestamp":"2026-09-24T09:14:55.784Z"}
+[31merror[39m: [CodeSummary] All providers failed. {"timestamp":"2026-09-24T09:14:55.784Z"}
+Γ¥î result was null (all providers failed or no conversations)
+
+
+=== TEST COMPLETE ===
