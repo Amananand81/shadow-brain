@@ -9,18 +9,59 @@ export interface ApiMessage {
   content: string;
 }
 
-export async function passwordAuth(email: string, password: string, mode: 'login' | 'signup') {
-  const res = await fetch(toApiUrl('/api/auth/password'), {
+async function authRequest(path: string, body: Record<string, string>) {
+  const res = await fetch(toApiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ email, password, mode }),
+    body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => null);
-  if (!res.ok || !data?.token || !data?.user?.email) {
-    throw new Error(data?.message || `Authentication failed (${res.status})`);
+  if (!res.ok) throw new Error(data?.message || `Authentication failed (${res.status})`);
+  return data;
+}
+
+export function passwordAuth(email: string, password: string, mode: 'signup', name: string, confirmPassword: string): Promise<{ message: string }>;
+export function passwordAuth(email: string, password: string, mode: 'login'): Promise<{ token: string; user: { email: string; name?: string; avatar?: string } }>;
+export async function passwordAuth(email: string, password: string, mode: 'login' | 'signup', name?: string, confirmPassword?: string) {
+  if (mode === 'signup') {
+    return authRequest('/api/auth/register', { email, password, confirmPassword: confirmPassword || '', name: name || '' }) as Promise<{ message: string }>;
   }
+  const data = await authRequest('/api/auth/login', { email, password });
+  if (!data?.token || !data?.user?.email) throw new Error('Unexpected authentication response');
   return data as { token: string; user: { email: string; name?: string; avatar?: string } };
+}
+
+export async function getCurrentUser() {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(toApiUrl('/api/auth/me'), { headers, credentials: 'include' });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.email || !data?.token) return null;
+  return data as { email: string; name?: string; avatar?: string; token: string };
+}
+
+export async function logoutRequest() {
+  await fetch(toApiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' }).catch(() => undefined);
+}
+
+export async function verifyEmail(token: string) {
+  const data = await authRequest('/api/auth/verify-email', { token });
+  if (!data?.token || !data?.user?.email) throw new Error('Unexpected verification response');
+  return data as { token: string; user: { email: string; name?: string; avatar?: string } };
+}
+
+export async function resendVerification(email: string) {
+  return authRequest('/api/auth/resend-verification', { email }) as Promise<{ message: string }>;
+}
+
+export async function requestPasswordReset(email: string) {
+  return authRequest('/api/auth/forgot-password', { email }) as Promise<{ message: string }>;
+}
+
+export async function resetPassword(token: string, password: string, confirmPassword: string) {
+  return authRequest('/api/auth/reset-password', { token, password, confirmPassword }) as Promise<{ message: string }>;
 }
 
 export interface ApiEnrichment {
@@ -166,68 +207,28 @@ export async function googleLogin(credential: string): Promise<GoogleAuthUser> {
   });
   const data = await res.json().catch(() => null);
 
-  // ── STEP 1 (extended): Log the EXACT response from /api/auth/google ──
-  console.log(`[JWT-STEP-1-EXT] ═══ Raw /api/auth/google response ═══`);
-  console.log(`[JWT-STEP-1-EXT]   HTTP status: ${res.status} ${res.statusText}`);
-  console.log(`[JWT-STEP-1-EXT]   Content-Type: ${res.headers.get('content-type')}`);
-  console.log(`[JWT-STEP-1-EXT]   response.ok: ${res.ok}`);
-  console.log(`[JWT-STEP-1-EXT]   body parsed: ${data !== null}`);
-  console.log(`[JWT-STEP-1-EXT]   body keys: ${JSON.stringify(Object.keys(data || {}))}`);
-  console.log(`[JWT-STEP-1-EXT]   body.full: ${JSON.stringify(data)?.slice(0, 500)}`);
-  console.log(`[JWT-STEP-1-EXT]   has data.token: ${!!data?.token}`);
-  console.log(`[JWT-STEP-1-EXT]   has data.user: ${!!data?.user}`);
-  console.log(`[JWT-STEP-1-EXT]   has data.user.email: ${!!data?.user?.email}`);
-  console.log(`[JWT-STEP-1-EXT]   data.token type: ${typeof data?.token}`);
-  console.log(`[JWT-STEP-1-EXT]   data.token length: ${data?.token?.length ?? 0}`);
-  console.log(`[JWT-STEP-1-EXT]   data.token preview: ${data?.token ? data.token.slice(0, 40) + '...' : 'N/A'}`);
-
   if (!res.ok) {
     const msg = data?.message || `Google sign-in failed (${res.status})`;
-    console.error(`[JWT-STEP-1-EXT] ❌ FAIL — Backend returned error: ${msg}`);
     throw new Error(msg);
   }
 
-  console.log(`[JWT-STEP-1-EXT]   ─── Branch analysis ───`);
-
-  // Backend may return { token, user } or just { email, name, avatar } (cookie-only).
   if (data?.user?.email && data?.token) {
-    console.log(`[JWT-STEP-1-EXT] ✅ Branch A: data.user.email="${data.user.email}", data.token.length=${data.token.length}`);
     return { token: data.token, user: data.user };
   }
-  if (data?.user?.email && !data?.token) {
-    console.warn(`[JWT-STEP-1-EXT] ⚠️ Branch B: data.user.email present but NO data.token — falling through to /me`);
-  }
   if (data?.email && data?.token) {
-    console.log(`[JWT-STEP-1-EXT] ✅ Branch C: data.email="${data.email}", data.token.length=${data.token.length}`);
     return { token: data.token, user: { email: data.email, name: data.name, avatar: data.avatar } };
   }
 
-  // Fallback: backend set an httpOnly cookie but didn't return the token in the body.
-  // Recover it via /api/auth/me which reads the cookie and now returns { token, ... }.
-  console.warn(`[JWT-STEP-1-EXT] ⚠️ No token in body. Trying /api/auth/me fallback...`);
   const meRes = await fetch(toApiUrl('/api/auth/me'), { credentials: 'include' });
   const meBody = await meRes.json().catch(() => null);
-  console.log(`[JWT-STEP-1-EXT]   /api/auth/me status: ${meRes.status}`);
-  console.log(`[JWT-STEP-1-EXT]   /api/auth/me body: ${JSON.stringify(meBody)?.slice(0, 300)}`);
-  console.log(`[JWT-STEP-1-EXT]   /api/auth/me hasToken: ${!!meBody?.token}`);
   if (meRes.ok && meBody?.token) {
     const email = meBody.email || data?.email || '';
     const name = meBody.name || data?.name;
     const avatar = meBody.avatar || data?.avatar;
-    console.log(`[JWT-STEP-1-EXT] ✅ Token recovered via /me, token.length=${meBody.token.length}`);
     return { token: meBody.token, user: { email, name, avatar } };
   }
 
-  // Last resort: return what we have (extension sync will fail, but login won't crash).
-  const email = data?.email || data?.user?.email || '';
-  const name = data?.name || data?.user?.name;
-  const avatar = data?.avatar || data?.user?.avatar;
-  console.error(`[JWT-STEP-1-EXT] ❌ LAST RESORT: no token from body OR /me. Returning empty token.`);
-  console.error(`[JWT-STEP-1-EXT]   email=${email}, name=${name}`);
-  console.error(`[JWT-STEP-1-EXT]   This will cause setSession() to REMOVE the localStorage key`);
-  console.error(`[JWT-STEP-1-EXT]   The extension bridge will have no token to send`);
-  if (!email) throw new Error(`Unexpected server response: ${JSON.stringify(data)}`);
-  return { token: '', user: { email, name, avatar } };
+  throw new Error('Unexpected Google sign-in response');
 }
 
 export async function saveConversation(data: {

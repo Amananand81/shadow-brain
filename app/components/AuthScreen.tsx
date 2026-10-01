@@ -3,30 +3,26 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Mail, Lock, Eye, EyeOff, AlertCircle, Check,
-  Loader2, KeyRound, ArrowLeft, ShieldCheck,
+  Mail, Lock, Eye, EyeOff, AlertCircle, Check, UserRound,
+  Loader2, KeyRound, ArrowLeft,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { GoogleSignInButton } from "./GoogleSignInButton";
 import {
   checkPassword,
   isEmailValid,
-  requestPasswordReset,
-  resetPassword,
   saveRememberMe,
   clearRememberMe,
   getSavedEmail,
   setSession,
-  login as localLogin,
-  signUp as localSignUp,
 } from "@/app/lib/auth";
-import { googleLogin, passwordAuth } from "@/app/lib/api";
+import { googleLogin, passwordAuth, requestPasswordReset, resendVerification } from "@/app/lib/api";
 
 interface AuthScreenProps {
   onAuthenticated: (email: string) => void;
 }
 
-type Mode = "login" | "signup" | "forgot" | "reset";
+type Mode = "login" | "signup" | "forgot";
 
 function RuleRow({ met, label }: { met: boolean; label: string }) {
   return (
@@ -99,6 +95,7 @@ function InputRow({
 
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [mode, setMode] = useState<Mode>("login");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -109,24 +106,21 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   // Forgot/reset flow
   const [resetEmail, setResetEmail] = useState("");
-  const [resetCode, setResetCode] = useState("");
-  const [simulatedCode, setSimulatedCode] = useState<string | null>(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [resetSuccess, setResetSuccess] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Load saved email on mount
   useEffect(() => {
     const saved = getSavedEmail();
     if (saved) {
-      setEmail(saved);
-      setRememberMe(true);
+      const timer = window.setTimeout(() => {
+        setEmail(saved);
+        setRememberMe(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, []);
 
   const rules = checkPassword(password);
-  const newRules = checkPassword(newPassword);
   const emailLooksValid = email.length === 0 || isEmailValid(email);
 
   // ── Main login/signup submit ─────────────────────────────────────────────
@@ -135,46 +129,25 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     setError(null);
     setLoading(true);
 
-    let result: { ok: true; email: string } | { ok: false; error: string };
-    let backendToken = "";
     try {
-      if (mode !== "login" && mode !== "signup") {
-        result = { ok: false, error: "Invalid authentication mode." };
-      } else if (mode === "signup" && password !== confirmPassword) {
-        result = { ok: false, error: "Passwords do not match." };
-      } else {
-        try {
-          const response = await passwordAuth(email, password, mode);
-          backendToken = response.token;
-          result = { ok: true, email: response.user.email };
-        } catch {
-          // Fallback to local auth if backend password endpoint is offline
-          if (mode === "signup") {
-            result = await localSignUp(email, password, confirmPassword);
-          } else {
-            result = await localLogin(email, password);
-          }
-        }
+      if (mode === "signup") {
+        if (password !== confirmPassword) throw new Error("Passwords do not match.");
+        const response = await passwordAuth(email, password, "signup", name, confirmPassword);
+        setNotice(response.message);
+        setLoading(false);
+        return;
       }
+
+      const response = await passwordAuth(email, password, "login");
+      setSession(response.user.email, response.token);
+      if (rememberMe) saveRememberMe(response.user.email);
+      else clearRememberMe();
+      onAuthenticated(response.user.email);
     } catch (error) {
-      result = { ok: false, error: error instanceof Error ? error.message : "Authentication failed." };
+      setError(error instanceof Error ? error.message : "Authentication failed.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-
-    setSession(result.email, backendToken);
-
-    if (rememberMe) {
-      saveRememberMe(result.email);
-    } else {
-      clearRememberMe();
-    }
-
-    onAuthenticated(result.email);
   }
 
   // ── Google sign-in ───────────────────────────────────────────────────────
@@ -184,44 +157,9 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     try {
       const res = await googleLogin(credential);
 
-      // ── STEP 1: Log complete response from googleLogin() ──
-      console.log(`[JWT-STEP-1] ═══ Google Login Response ═══`);
-      console.log(`[JWT-STEP-1]   email:    ${res.user?.email}`);
-      console.log(`[JWT-STEP-1]   name:     ${res.user?.name}`);
-      console.log(`[JWT-STEP-1]   token:    ${res.token ? 'PRESENT' : 'MISSING'}`);
-      console.log(`[JWT-STEP-1]   token type: ${typeof res.token}`);
-      console.log(`[JWT-STEP-1]   token is empty string: ${res.token === ''}`);
-      console.log(`[JWT-STEP-1]   token length: ${res.token?.length ?? 0}`);
-      console.log(`[JWT-STEP-1]   token preview: ${res.token ? res.token.slice(0, 40) + '...' : 'N/A'}`);
-      console.log(`[JWT-STEP-1]   token full: ${JSON.stringify(res.token)}`);
-      if (!res.token) {
-        console.error(`[JWT-STEP-1] ❌ FAIL — Token is missing/empty from googleLogin(). The backend returned it but the frontend could not extract it.`);
-      } else {
-        console.log(`[JWT-STEP-1] ✅ PASS — Token received from googleLogin()`);
-      }
-
       setSession(res.user.email, res.token);
-
-      // ── STEP 2: Verify localStorage after setSession() ──
-      const storedAfter = localStorage.getItem('shadowbrain_token');
-      console.log(`[JWT-STEP-2] ═══ After setSession() — localStorage check ═══`);
-      console.log(`[JWT-STEP-2]   localStorage value: ${storedAfter ? 'PRESENT' : 'MISSING'}`);
-      console.log(`[JWT-STEP-2]   type: ${typeof storedAfter}`);
-      console.log(`[JWT-STEP-2]   is empty: ${storedAfter === ''}`);
-      console.log(`[JWT-STEP-2]   length: ${storedAfter?.length ?? 0}`);
-      console.log(`[JWT-STEP-2]   preview: ${storedAfter ? storedAfter.slice(0, 40) + '...' : 'N/A'}`);
-      console.log(`[JWT-STEP-2]   full: ${JSON.stringify(storedAfter)}`);
-      if (!storedAfter) {
-        console.error(`[JWT-STEP-2] ❌ FAIL — localStorage has NO token after setSession(). setSession() received token=${JSON.stringify(res.token)}`);
-        console.error(`[JWT-STEP-2]   This means setSession() treated the token as falsy and REMOVED it.`);
-      } else {
-        console.log(`[JWT-STEP-2] ✅ PASS — Token stored in localStorage`);
-      }
-
       onAuthenticated(res.user.email);
     } catch (err) {
-      console.error(`[JWT-STEP-1] ❌ FAIL — googleLogin() threw: ${err instanceof Error ? err.message : String(err)}`);
-      console.error("[GoogleSignIn]", err);
       setError(err instanceof Error ? err.message : "Google sign-in failed. Please try again.");
     } finally {
       setLoading(false);
@@ -233,29 +171,14 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const result = await requestPasswordReset(resetEmail);
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    try {
+      const result = await requestPasswordReset(resetEmail);
+      setNotice(result.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to request a password reset.");
+    } finally {
+      setLoading(false);
     }
-    // Show simulated code in a banner (in real app this would be an email)
-    setSimulatedCode(result.code);
-    setMode("reset");
-  }
-
-  // ── Reset password — verify code + set new password ─────────────────────
-  async function handleResetSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    const result = await resetPassword(resetEmail, resetCode, newPassword, confirmNewPassword);
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setResetSuccess(true);
   }
 
   function switchMode(next: Mode) {
@@ -263,11 +186,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     setError(null);
     setPassword("");
     setConfirmPassword("");
-    setSimulatedCode(null);
-    setResetCode("");
-    setNewPassword("");
-    setConfirmNewPassword("");
-    setResetSuccess(false);
+    setNotice(null);
   }
 
   const eyeBtn = (show: boolean, toggle: () => void) => (
@@ -308,8 +227,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           <Logo />
         </div>
 
-        {/* ── Forgot / Reset screens ────────────────────────────────────── */}
-        {(mode === "forgot" || mode === "reset") && (
+        {mode === "forgot" && (
           <>
             {/* Back button */}
             <button
@@ -325,142 +243,32 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             <div className="flex items-center gap-2 mb-5">
               <KeyRound size={18} style={{ color: "var(--blue)" }} />
               <h2 className="text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
-                {mode === "forgot" ? "Reset your password" : "Enter reset code"}
+                Reset your password
               </h2>
             </div>
 
-            {/* ── Step 1: request code ─────────────────────────────────── */}
-            {mode === "forgot" && (
-              <form onSubmit={handleForgotRequest} className="flex flex-col gap-3.5">
-                <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                  Enter your account email and we&apos;ll generate a reset code for you.
-                </p>
+            <form onSubmit={handleForgotRequest} className="flex flex-col gap-3.5">
+              <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                Enter your account email. If it matches an account, we&apos;ll send a secure reset link.
+              </p>
 
-                <InputRow
-                  icon={Mail}
-                  label="Email address"
-                  type="email"
-                  value={resetEmail}
-                  onChange={setResetEmail}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                />
+              <InputRow
+                icon={Mail}
+                label="Email address"
+                type="email"
+                value={resetEmail}
+                onChange={setResetEmail}
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
 
-                <AnimatePresence>
-                  {error && <ErrorBanner message={error} />}
-                </AnimatePresence>
+              <AnimatePresence>
+                {error && <ErrorBanner message={error} />}
+              </AnimatePresence>
+              {notice && <p role="status" className="text-[12px]" style={{ color: "#34d399" }}>{notice}</p>}
 
-                <SubmitButton loading={loading} label="Send reset code" />
-              </form>
-            )}
-
-            {/* ── Step 2: enter code + new password ───────────────────── */}
-            {mode === "reset" && (
-              <>
-                {/* Simulated email banner */}
-                {simulatedCode && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-col gap-1 px-3 py-2.5 rounded-xl mb-4 text-[11.5px]"
-                    style={{
-                      background: "rgba(52,211,153,0.08)",
-                      border: "1px solid rgba(52,211,153,0.25)",
-                      color: "#34d399",
-                    }}
-                  >
-                    <div className="flex items-center gap-1.5 font-semibold">
-                      <ShieldCheck size={13} />
-                      Simulated email (no backend)
-                    </div>
-                    <span style={{ color: "var(--text-secondary)" }}>
-                      Your reset code:{" "}
-                      <span className="font-mono font-bold tracking-widest" style={{ color: "#34d399" }}>
-                        {simulatedCode}
-                      </span>
-                    </span>
-                  </motion.div>
-                )}
-
-                {resetSuccess ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="flex flex-col items-center gap-3 py-4 text-center"
-                  >
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center"
-                      style={{ background: "rgba(52,211,153,0.15)", border: "1px solid #34d399" }}
-                    >
-                      <Check size={20} color="#34d399" />
-                    </div>
-                    <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
-                      Password updated! You can now log in.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => switchMode("login")}
-                      className="text-[12.5px] font-medium"
-                      style={{ color: "var(--blue)" }}
-                    >
-                      Go to login →
-                    </button>
-                  </motion.div>
-                ) : (
-                  <form onSubmit={handleResetSubmit} className="flex flex-col gap-3.5">
-                    <InputRow
-                      icon={KeyRound}
-                      label="6-digit reset code"
-                      type="text"
-                      value={resetCode}
-                      onChange={setResetCode}
-                      placeholder="123456"
-                      autoComplete="one-time-code"
-                    />
-
-                    <InputRow
-                      icon={Lock}
-                      label="New password"
-                      type={showNewPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={setNewPassword}
-                      placeholder="••••••••"
-                      autoComplete="new-password"
-                      rightEl={eyeBtn(showNewPassword, () => setShowNewPassword((v) => !v))}
-                    />
-
-                    <InputRow
-                      icon={Lock}
-                      label="Confirm new password"
-                      type={showNewPassword ? "text" : "password"}
-                      value={confirmNewPassword}
-                      onChange={setConfirmNewPassword}
-                      placeholder="••••••••"
-                      autoComplete="new-password"
-                    />
-
-                    {/* password rules */}
-                    {newPassword.length > 0 && (
-                      <div
-                        className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2.5 rounded-xl"
-                        style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
-                      >
-                        <RuleRow met={newRules.minLength} label="8+ characters" />
-                        <RuleRow met={newRules.hasLetter} label="A letter" />
-                        <RuleRow met={newRules.hasNumber} label="A number" />
-                        <RuleRow met={newRules.hasSymbol} label="A symbol" />
-                      </div>
-                    )}
-
-                    <AnimatePresence>
-                      {error && <ErrorBanner message={error} />}
-                    </AnimatePresence>
-
-                    <SubmitButton loading={loading} label="Reset password" />
-                  </form>
-                )}
-              </>
-            )}
+              <SubmitButton loading={loading} label="Send reset link" />
+            </form>
           </>
         )}
 
@@ -498,6 +306,18 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+              {mode === "signup" && (
+                <InputRow
+                  icon={UserRound}
+                  label="Full name"
+                  type="text"
+                  value={name}
+                  onChange={setName}
+                  placeholder="Your name"
+                  autoComplete="name"
+                />
+              )}
+
               {/* Email */}
               <InputRow
                 icon={Mail}
@@ -590,6 +410,27 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               <AnimatePresence>
                 {error && <ErrorBanner message={error} />}
               </AnimatePresence>
+              {notice && <p role="status" className="text-[12px]" style={{ color: "#34d399" }}>{notice}</p>}
+              {mode === "signup" && notice && (
+                <button
+                  type="button"
+                  className="text-left text-[11.5px] font-medium"
+                  style={{ color: "var(--blue)" }}
+                  onClick={async () => {
+                    setLoading(true);
+                    try {
+                      const result = await resendVerification(email);
+                      setNotice(result.message);
+                    } catch (resendError) {
+                      setError(resendError instanceof Error ? resendError.message : "Unable to resend verification email.");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  Resend verification email
+                </button>
+              )}
 
               <SubmitButton
                 loading={loading}

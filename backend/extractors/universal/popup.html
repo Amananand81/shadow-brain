@@ -51,6 +51,10 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .actions { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .platform-picker { display: flex; flex-direction: column; gap: 5px; }
+    .platform-picker label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+    .platform-select { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg3); color: var(--text); font: 11px 'Inter', sans-serif; outline: none; }
+    .platform-select:focus { border-color: var(--accent); }
     .btn { width: 100%; padding: 10px 14px; border: none; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s ease; display: flex; align-items: center; justify-content: center; gap: 7px; letter-spacing: .02em; }
     .btn-primary { background: linear-gradient(135deg, var(--accent), #5b4fe0); color: #fff; }
     .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(124,106,255,.35); }
@@ -141,6 +145,21 @@
   </div>
 
   <div class="actions">
+    <div class="platform-picker">
+      <label for="platformSelect">Platform to scrape</label>
+      <select class="platform-select" id="platformSelect">
+        <option value="auto">Use current tab (auto-detect)</option>
+        <option value="chatgpt">ChatGPT</option>
+        <option value="claude">Claude</option>
+        <option value="gemini">Gemini</option>
+        <option value="blackbox">Blackbox</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="copilot">Microsoft Copilot</option>
+        <option value="githubCopilot">GitHub Copilot</option>
+        <option value="perplexity">Perplexity</option>
+        <option value="grok">Grok</option>
+      </select>
+    </div>
     <button class="btn btn-primary"   id="btnBulkImport">⚡ Bulk Import All Past Chats</button>
     <button class="btn btn-secondary" id="btnSyncNow" style="border-color:#34d399;color:#34d399">🔄 Sync All to MongoDB</button>
     <button class="btn btn-stop"      id="btnForceStop" style="display:none">⛔ Force Stop All</button>

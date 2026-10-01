@@ -26,6 +26,31 @@ const userSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
+    authProviders: {
+      type: [String],
+      enum: ['google', 'password'],
+      default: [],
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationTokenHash: {
+      type: String,
+      select: false,
+    },
+    emailVerificationExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    passwordResetTokenHash: {
+      type: String,
+      select: false,
+    },
+    passwordResetExpiresAt: {
+      type: Date,
+      select: false,
+    },
     lastLoginAt: {
       type: Date,
       default: Date.now,

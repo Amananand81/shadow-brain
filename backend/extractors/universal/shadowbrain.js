@@ -25,11 +25,7 @@ function findToken() {
       lastSentToken = token;
       domBridgeFired = true;
       console.log(`[JWT-STEP-4] ═══ PAGE TOKEN BRIDGE — ${bridgeToken ? 'DOM' : 'localStorage'} ═══`);
-      console.log(`[JWT-STEP-4]   token type: ${typeof token}`);
-      console.log(`[JWT-STEP-4]   token length: ${token.length}`);
-      console.log(`[JWT-STEP-4]   token preview: ${token.slice(0, 40)}...`);
-      console.log(`[JWT-STEP-4]   token full: ${JSON.stringify(token)}`);
-      console.log(`[JWT-STEP-4]   Sending SET_JWT to background...`);
+      console.log('[JWT-STEP-4] Sending session token to extension background');
       chrome.runtime.sendMessage({ type: 'SET_JWT', token }, (response) => {
         if (chrome.runtime.lastError) {
           console.error(`[JWT-STEP-4] ❌ FAIL — chrome.runtime.sendMessage error: ${chrome.runtime.lastError.message}`);
@@ -68,11 +64,7 @@ window.addEventListener('message', (event) => {
   if (event.data?.type?.startsWith?.('SHADOWBRAIN_')) {
     console.log(`[JWT-STEP-4] ═══ postMessage received ═══`);
     console.log(`[JWT-STEP-4]   type: ${event.data.type}`);
-    console.log(`[JWT-STEP-4]   has token: ${!!event.data.token}`);
-    console.log(`[JWT-STEP-4]   token type: ${typeof event.data.token}`);
-    console.log(`[JWT-STEP-4]   token length: ${event.data.token?.length ?? 0}`);
-    console.log(`[JWT-STEP-4]   token preview: ${event.data.token ? event.data.token.slice(0, 40) + '...' : 'N/A'}`);
-    console.log(`[JWT-STEP-4]   token full: ${JSON.stringify(event.data.token)}`);
+    console.log(`[JWT-STEP-4]   token present: ${Boolean(event.data.token)}`);
     console.log(`[JWT-STEP-4]   origin: ${event.origin}`);
     console.log(`[JWT-STEP-4]   source: ${event.source === window ? 'window (self)' : 'other'}`);
   }
@@ -81,8 +73,7 @@ window.addEventListener('message', (event) => {
     postMessageBridgeFired = true;
     const token = event.data.token;
     if (token) {
-      console.log(`[JWT-STEP-4] ✅ PASS — postMessage bridge: valid token received`);
-      console.log(`[JWT-STEP-4]   Sending SET_JWT to background...`);
+      console.log('[JWT-STEP-4] Session token received; sending it to extension background');
       chrome.runtime.sendMessage({ type: 'SET_JWT', token }, (response) => {
         if (chrome.runtime.lastError) {
           console.error(`[JWT-STEP-4] ❌ FAIL — chrome.runtime.sendMessage error: ${chrome.runtime.lastError.message}`);

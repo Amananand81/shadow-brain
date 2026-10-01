@@ -31,6 +31,18 @@ const PLATFORM_LABELS = {
   perplexity: 'Perplexity 🔍', grok: 'Grok 𝕏',
 };
 
+const PLATFORM_IMPORT_OPTIONS = {
+  chatgpt: { platform: 'chatgpt', baseUrl: 'https://chatgpt.com', label: 'ChatGPT' },
+  claude: { platform: 'claude', baseUrl: 'https://claude.ai/recents', label: 'Claude' },
+  gemini: { platform: 'gemini', baseUrl: 'https://gemini.google.com/app', label: 'Gemini' },
+  blackbox: { platform: 'blackbox', baseUrl: 'https://www.blackbox.ai', label: 'Blackbox' },
+  deepseek: { platform: 'deepseek', baseUrl: 'https://chat.deepseek.com', label: 'DeepSeek' },
+  copilot: { platform: 'copilot', baseUrl: 'https://copilot.microsoft.com', label: 'Microsoft Copilot' },
+  githubCopilot: { platform: 'copilot', baseUrl: 'https://github.com/copilot', label: 'GitHub Copilot' },
+  perplexity: { platform: 'perplexity', baseUrl: 'https://www.perplexity.ai/library', label: 'Perplexity' },
+  grok: { platform: 'grok', baseUrl: 'https://grok.com', label: 'Grok' },
+};
+
 // ── Toast ──────────────────────────────────────────────────
 function showToast(msg, type = '') {
   const t = document.getElementById('toast');
@@ -237,22 +249,19 @@ function renderProgress(prog) {
 
 // Detect platform from the active tab's URL (cached from last query)
 let _currentTabInfo = null;
-function currentTabPlatform() {
-  return _currentTabInfo?.platform || null;
+function selectedImportTarget() {
+  const selection = document.getElementById('platformSelect').value;
+  return selection === 'auto' ? _currentTabInfo : PLATFORM_IMPORT_OPTIONS[selection] || null;
 }
 
-// ── Bulk Import — starts scraping for current tab's platform ─
+function currentTabPlatform() {
+  return selectedImportTarget()?.platform || null;
+}
+
+// ── Bulk Import — starts scraping for the selected platform ─
 document.getElementById('btnBulkImport').addEventListener('click', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.url) { showToast('Cannot detect current page', 'error'); return; }
-
-  const host    = new URL(tab.url).hostname;
-  const match   = PLATFORM_BASE_URLS[host] ||
-                  Object.entries(PLATFORM_BASE_URLS).find(([h]) => host.includes(h))?.[1];
-
-  if (!match) { showToast('Open an AI platform tab first (ChatGPT, DeepSeek, Gemini…)', 'error'); return; }
-
-  _currentTabInfo = match;
+  const match = selectedImportTarget();
+  if (!match) { showToast('Choose a platform or open a supported AI platform tab', 'error'); return; }
 
   const result = await chrome.runtime.sendMessage({
     type:     'START_PLATFORM_IMPORT',
@@ -263,9 +272,9 @@ document.getElementById('btnBulkImport').addEventListener('click', async () => {
   if (result?.status === 'already_running') {
     showToast(`${PLATFORM_LABELS[match.platform] || match.platform} is already scraping`, 'success');
   } else if (result?.status === 'started') {
-    showToast(`Started ${PLATFORM_LABELS[match.platform] || match.platform} — popup can be closed safely!`, 'success');
+    showToast(`Started ${match.label || PLATFORM_LABELS[match.platform] || match.platform} — popup can be closed safely!`, 'success');
     document.getElementById('btnBulkImport').disabled    = true;
-    document.getElementById('btnBulkImport').textContent = `🔍 Discovering ${PLATFORM_LABELS[match.platform] || match.platform}…`;
+    document.getElementById('btnBulkImport').textContent = `🔍 Discovering ${match.label || PLATFORM_LABELS[match.platform] || match.platform}…`;
     document.getElementById('btnForceStop').style.display = 'flex';
     document.getElementById('progressSection').classList.add('visible');
     document.getElementById('progressLabel').textContent  = `🔍 Discovering ${PLATFORM_LABELS[match.platform] || match.platform} chats…`;
@@ -274,6 +283,12 @@ document.getElementById('btnBulkImport').addEventListener('click', async () => {
     document.getElementById('progressFill').style.width   = '100%';
     document.getElementById('progressTitle').textContent  = 'Walking the full sidebar before any scraping starts…';
   }
+});
+
+document.getElementById('platformSelect').addEventListener('change', async () => {
+  await chrome.storage.local.set({ brain_shadow_selected_platform: document.getElementById('platformSelect').value });
+  const progress = await chrome.runtime.sendMessage({ type: 'GET_SCRAPE_PROGRESS' });
+  if (progress) renderProgress(progress);
 });
 
 // ── Sync All to MongoDB ────────────────────────────────────
@@ -386,6 +401,11 @@ chrome.storage.onChanged.addListener((changes) => {
     const host  = new URL(tab.url).hostname;
     _currentTabInfo = PLATFORM_BASE_URLS[host] ||
                       Object.entries(PLATFORM_BASE_URLS).find(([h]) => host.includes(h))?.[1] || null;
+  }
+  const selection = await chrome.storage.local.get('brain_shadow_selected_platform');
+  const savedSelection = selection.brain_shadow_selected_platform;
+  if (savedSelection === 'auto' || PLATFORM_IMPORT_OPTIONS[savedSelection]) {
+    document.getElementById('platformSelect').value = savedSelection;
   }
 
   await loadStats();

@@ -1,7 +1,5 @@
 const jwt = require('jsonwebtoken');
 
-const DEMO_SECRET = 'demo-only-secret-change-me';
-
 const DEMO_USER = {
   id: 'demo-test-user',
   email: 'demo@example.com',
@@ -11,7 +9,8 @@ const DEMO_USER = {
 
 function verifyDemoToken(token, req) {
   try {
-    const decoded = jwt.verify(token, DEMO_SECRET);
+    if (!process.env.DEMO_JWT_SECRET) return { success: false };
+    const decoded = jwt.verify(token, process.env.DEMO_JWT_SECRET);
     const match =
       decoded.sub === DEMO_USER.id &&
       decoded.email === DEMO_USER.email &&
@@ -27,6 +26,9 @@ function verifyDemoToken(token, req) {
 }
 
 function generateDemoToken() {
+  if (!process.env.DEMO_JWT_SECRET) {
+    throw new Error('DEMO_JWT_SECRET is not configured');
+  }
   return jwt.sign(
     {
       sub: DEMO_USER.id,
@@ -34,7 +36,7 @@ function generateDemoToken() {
       name: DEMO_USER.name,
       role: DEMO_USER.role,
     },
-    DEMO_SECRET,
+    process.env.DEMO_JWT_SECRET,
     { expiresIn: '24h' }
   );
 }
