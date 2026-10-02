@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { startTransition, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel, SearchRecord } from "./components/RightPanel";
@@ -13,17 +13,20 @@ import { ChatSession, Message } from "./types";
 import { generateId, getMemoryGraph } from "./lib/utils";
 import {
   clearSelectedAgents,
+  clearLegacyCredentials,
   clearSession,
   getSelectedAgents,
-  getSession,
   hasSeenExtensionPrompt,
   markExtensionPromptSeen,
   setSelectedAgents,
+  setSession,
 } from "./lib/auth";
 import {
   sendChatMessage,
   fetchConversations,
   saveConversation,
+  getCurrentUser,
+  logoutRequest,
   ApiConversation,
   MemorySource,
 } from "./lib/api";
@@ -87,26 +90,36 @@ export default function Home() {
   // Track which session IDs have already been saved to backend
   const persistedIds = useRef<Set<string>>(new Set());
 
-  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
-    const session = getSession();
-    if (!session) {
+    let cancelled = false;
+    clearLegacyCredentials();
+    getCurrentUser().then((user) => {
+      if (cancelled) return;
+      if (!user) {
+        clearSession();
+        setAuth({ stage: "auth", userEmail: null, selectedAgents: [] });
+        return;
+      }
+      setSession(user.email, user.token);
+      setToken(user.token);
+      const agents = getSelectedAgents();
+      setAuth({
+        stage: agents.length === 0 ? "select-agents" : "app",
+        userEmail: user.email,
+        selectedAgents: agents,
+      });
+    }).catch(() => {
+      if (cancelled) return;
+      clearSession();
       setAuth({ stage: "auth", userEmail: null, selectedAgents: [] });
-      return;
-    }
-    const agents = getSelectedAgents();
-    if (agents.length === 0) {
-      setAuth({ stage: "select-agents", userEmail: session.email, selectedAgents: [] });
-      return;
-    }
-    setAuth({ stage: "app", userEmail: session.email, selectedAgents: agents });
+    });
+    return () => { cancelled = true; };
   }, []);
-  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Load backend conversations once the user is in the app
   useEffect(() => {
     if (stage !== "app") return;
-    setSessionsLoading(true);
+    startTransition(() => setSessionsLoading(true));
     fetchConversations().then((convs) => {
       if (convs.length) {
         const backendSessions = convs.map(apiConvToSession);
@@ -130,25 +143,9 @@ export default function Home() {
 
     if (typeof window !== "undefined") {
       const storedToken = window.localStorage.getItem("shadowbrain_token");
-
-      // ── STEP 3: Log before postMessage + div render ──
-      console.log(`[JWT-STEP-3] ═══ page.tsx handleAuthenticated ═══`);
-      console.log(`[JWT-STEP-3]   email: ${email}`);
-      console.log(`[JWT-STEP-3]   localStorage token: ${storedToken ? 'PRESENT' : 'MISSING'}`);
-      console.log(`[JWT-STEP-3]   token length: ${storedToken?.length ?? 0}`);
-      console.log(`[JWT-STEP-3]   token preview: ${storedToken ? storedToken.slice(0, 40) + '...' : 'N/A'}`);
-
       setToken(storedToken);
       if (storedToken) {
-        console.log(`[JWT-STEP-3] ✅ PASS — Sending SHADOWBRAIN_LOGIN postMessage`);
-        console.log(`[JWT-STEP-3]   targetOrigin: "*"`);
-        console.log(`[JWT-STEP-3]   token preview: ${storedToken.slice(0, 40)}...`);
         window.postMessage({ type: "SHADOWBRAIN_LOGIN", token: storedToken }, "*");
-        console.log(`[JWT-STEP-3]   postMessage dispatched`);
-        console.log(`[JWT-STEP-3]   Note: #shadowbrain-auth-bridge div will render after React re-render (token state is now set)`);
-      } else {
-        console.error(`[JWT-STEP-3] ❌ FAIL — NO token in localStorage — postMessage NOT sent`);
-        console.error(`[JWT-STEP-3]   The extension will never receive the JWT`);
       }
     }
 
@@ -158,19 +155,20 @@ export default function Home() {
     }
   }, []);
 
-  // Hook to pull local storage token on stage changes
+  // Keep the universal extension paired even when the page or extension is
+  // reloaded after the user has already signed in.
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setToken(window.localStorage.getItem("shadowbrain_token"));
-    }
-  }, [stage]);
+    if (typeof window === "undefined" || !token) return;
+    window.postMessage({ type: "SHADOWBRAIN_LOGIN", token }, window.location.origin);
+  }, [token]);
 
   const handleAgentsSelected = useCallback((agents: string[]) => {
     setSelectedAgents(agents);
     setAuth((prev) => ({ ...prev, stage: "app", selectedAgents: agents }));
   }, []);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    await logoutRequest();
     clearSession();
     clearSelectedAgents();
     setToken(null);
@@ -231,11 +229,11 @@ export default function Home() {
           s.id !== activeId
             ? s
             : {
-                ...s,
-                messages: [...s.messages, userMsg],
-                title: isFirstMessage ? text.slice(0, 45) : s.title,
-                lastMessageAt: new Date(),
-              }
+              ...s,
+              messages: [...s.messages, userMsg],
+              title: isFirstMessage ? text.slice(0, 45) : s.title,
+              lastMessageAt: new Date(),
+            }
         )
       );
 

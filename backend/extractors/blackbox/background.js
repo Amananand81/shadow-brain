@@ -4,6 +4,7 @@
 const STORAGE_KEY     = 'brain_shadow_conversations';
 const META_KEY        = 'brain_shadow_meta';
 const BACKEND_URL_KEY = 'brain_shadow_backend_url';
+const JWT_KEY         = 'brain_shadow_jwt_token';
 const DEFAULT_BACKEND = 'http://localhost:8000';
 
 async function saveConversation(data, source = 'realtime') {
@@ -41,9 +42,9 @@ async function updateMeta(conversations) {
 }
 
 async function syncToBackend(data) {
-  const result = await chrome.storage.local.get(BACKEND_URL_KEY);
+  const result = await chrome.storage.local.get([BACKEND_URL_KEY, JWT_KEY]);
   const backendUrl = result[BACKEND_URL_KEY] || DEFAULT_BACKEND;
-  const response = await fetch(`${backendUrl}/api/import/capture`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const response = await fetch(`${backendUrl}/api/import/capture`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${result[JWT_KEY] || ''}` }, body: JSON.stringify(data) });
   if (!response.ok) throw new Error(`Backend error: ${response.status}`);
   return response.json();
 }

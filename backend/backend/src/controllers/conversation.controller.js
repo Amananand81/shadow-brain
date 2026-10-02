@@ -21,8 +21,6 @@ const BANNED_ROLE_MARKERS = [
   'the user was given',
 ];
 
-// Labels that indicate surrounding text is metadata/search output rather than
-// real conversation content.
 const BANNED_LABELS = [
   'title:',
   'platform:',
@@ -35,19 +33,13 @@ const BANNED_LABELS = [
   'pasted text',
 ];
 
-// Given a raw message content string, strip obvious filenames, search-result
-// labels, and previously-generated summary phrasing so none of that leaks into
-// either the LLM context or the fallback output.
 function sanitizeMessageContent(raw = '') {
   if (!raw) return '';
   let text = String(raw);
 
-  // Replace a bare "Text(...).txt"-style filename with nothing.
   text = text.replace(/\bText\([\d-]+\)\.txt\b/gi, ' ');
-  // Remove any trailing ".txt" (e.g. "chat.txt", "Pasted text.txt").
   text = text.replace(/\.txt\b/gi, ' ');
 
-  // Drop lines that are pure metadata labels (e.g. "Title:", "Platform:").
   const lines = text.split(/\r?\n/).filter((line) => {
     const trimmed = line.trim().toLowerCase();
     return !BANNED_LABELS.some((label) => trimmed.startsWith(label));
@@ -56,24 +48,21 @@ function sanitizeMessageContent(raw = '') {
   return lines.join('\n').replace(/\s+/g, ' ').trim();
 }
 
-// Remove messages whose content is really a filename, an empty paste stub, or
-// a previously generated summary rather than an actual conversation exchange.
 function isMetadataOnlyMessage(content = '') {
   const c = (content || '').trim();
   if (!c) return true;
 
   const lower = c.toLowerCase();
-  // Looks like just a filename.
+
   if (lower.endsWith('.txt')) return true;
-  // Only search-result labels / summary phrasing, no real dialogue.
   if (BANNED_LABELS.some((label) => lower.startsWith(label))) return true;
-  // A one-word title-like stub ("Document", "Pasted text").
   if (/^(document|pasted text)/i.test(c)) return true;
-  // A message that is purely a previously-generated recap line.
   if (BANNED_ROLE_MARKERS.some((marker) => lower.includes(marker))) return true;
 
   return false;
 }
+
+const CONVERSATION_BATCH_LIMIT = 1000;
 
 const createConversation = async (req, res, next) => {
   const startTime = Date.now();
@@ -104,7 +93,7 @@ const createConversation = async (req, res, next) => {
     console.log(`[JWT-STEP-8]   MongoDB save will use userId: "${req.user.userId}"`);
 
     // Validate platform enum before hitting the service
-    const VALID_PLATFORMS = ['chatgpt', 'claude', 'gemini', 'deepseek', 'blackbox', 'copilot', 'mscopilot', 'perplexity', 'grok'];
+    const VALID_PLATFORMS = ['chatgpt', 'claude', 'gemini', 'deepseek', 'blackbox', 'copilot', 'mscopilot', 'perplexity', 'grok', 'brain-shadow'];
     const normalizedPlatform = platform ? platform.toLowerCase() : 'chatgpt';
     if (!VALID_PLATFORMS.includes(normalizedPlatform)) {
       console.error(`[JWT-STEP-8] ❌ FAIL — INVALID PLATFORM: "${platform}"`);
@@ -121,7 +110,7 @@ const createConversation = async (req, res, next) => {
     console.log(`[JWT-STEP-8]   userId in doc: ${conversation.userId}`);
     console.log(`[JWT-STEP-8]   messages: ${conversation.messages?.length}`);
     console.log(`[JWT-STEP-8]   DB write in ${Date.now() - startTime}ms`);
-    
+
     // Trigger enrichment immediately (no queue)
     setImmediate(() => {
       console.log(`[JWT-STEP-8]   Triggering enrichment for ${conversation._id}`);
@@ -151,7 +140,7 @@ const bulkCreateConversations = async (req, res, next) => {
     console.log(`\n[CONTROLLER] ─── bulkCreateConversations START ───`);
     const { conversations } = req.body;
     console.log(`[CONTROLLER] Bulk payload: ${Array.isArray(conversations) ? conversations.length + ' items' : 'NOT AN ARRAY'}`);
-    
+
     if (!Array.isArray(conversations)) {
       console.error(`[CONTROLLER] conversations is not an array: ${typeof conversations}`);
       return res.status(400).json({ message: 'conversations must be an array' });
@@ -165,7 +154,7 @@ const bulkCreateConversations = async (req, res, next) => {
       try {
         const convo = await conversationService.createOrUpdate(convoData, req.user.userId);
         console.log(`[CONTROLLER] Bulk item ${i + 1} OK: _id=${convo._id}`);
-        
+
         setImmediate(() => {
           enrichmentService.process(convo._id).catch(err => {
             console.error(`[CONTROLLER] Bulk enrichment failed for ${convo._id}: ${err.message}`);
@@ -198,7 +187,10 @@ const listConversations = async (req, res, next) => {
   try {
     const { page, limit, platform } = req.query;
     const query = platform ? { platform, userId: req.user.userId } : { userId: req.user.userId };
-    const conversations = await conversationService.list(query, { page: Number(page), limit: Number(limit) });
+    const requestedPage = Number(page) || 1;
+    const requestedLimit = Number(limit) || CONVERSATION_BATCH_LIMIT;
+    const cappedLimit = Math.min(requestedLimit, CONVERSATION_BATCH_LIMIT);
+    const conversations = await conversationService.list(query, { page: requestedPage, limit: cappedLimit });
     res.json(conversations);
   } catch (error) {
     next(error);
@@ -277,7 +269,7 @@ const searchConversations = async (req, res, next) => {
     if (Array.isArray(platforms) && platforms.length > 0) {
       dbFilter.platform = { $in: platforms };
     }
-    const allConvs = await conversationService.list(dbFilter, { limit: 200 });
+    const allConvs = await conversationService.list(dbFilter, { limit: CONVERSATION_BATCH_LIMIT });
 
     const scored = allConvs
       .map(conv => {
@@ -572,15 +564,15 @@ Embeddings and Semantic Search — Examined how text is converted to numerical v
         // n8n returns { summary, heading }.
         // Keep heading and summary SEPARATE so the frontend can render them
         // distinctly (heading as title card, summary as body text).
-        n8nHeading     = (n8nResult.heading  || '').trim();
-        n8nSummaryText = (n8nResult.summary  || '').trim();
+        n8nHeading = (n8nResult.heading || '').trim();
+        n8nSummaryText = (n8nResult.summary || '').trim();
 
         const headingText = n8nHeading
           ? `${n8nHeading} — ${n8nSummaryText}`
           : n8nSummaryText;
 
-        answer    = headingText;
-        n8nUsed   = true;
+        answer = headingText;
+        n8nUsed = true;
         logger.info(`[Search] Answer generated via n8n (query="${query}")`);
       }
     } catch (n8nErr) {
@@ -601,9 +593,9 @@ Embeddings and Semantic Search — Examined how text is converted to numerical v
         const codeResult = await journeySummaryService.generateJourneySummary(query, scored);
 
         if (codeResult && (codeResult.heading || codeResult.summary)) {
-          n8nHeading     = (codeResult.heading || '').trim();
+          n8nHeading = (codeResult.heading || '').trim();
           n8nSummaryText = (codeResult.summary || '').trim();
-          answer         = n8nHeading ? `${n8nHeading} — ${n8nSummaryText}` : n8nSummaryText;
+          answer = n8nHeading ? `${n8nHeading} — ${n8nSummaryText}` : n8nSummaryText;
           codeSummaryUsed = true;
           console.log(`[CODE-SUMMARY] Success. heading="${n8nHeading}" summary_length=${n8nSummaryText.length}`);
           logger.info(`[CODE-SUMMARY] Answer generated via code-based service (query="${query}")`);

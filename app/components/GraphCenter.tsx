@@ -32,11 +32,11 @@ interface GraphCenterProps {
   onAiAnswerReady?: (keyword: string, answer: string) => void;
   onAiLoadingChange?: (loading: boolean) => void;
   onResultsPanelContentChange?: (content: ReactNode | null) => void;
+  onSelectConversation?: (convId: string) => void;
   panelResetKey?: number;
   sessions?: ChatSession[];
   sessionsLoading?: boolean;
   selectedAgents?: string[];
-  onSelectConversation?: (id: string) => void;
 }
 
 function fmtTime(date: Date): string {
@@ -77,9 +77,9 @@ function ConversationSessionCard({
   const platformColor = session.platform ? PLATFORM_COLORS[session.platform] ?? "#4f8aff" : "#4f8aff";
   const visibleMessages = filterMessagesByKeyword
     ? session.messages.filter((msg: Message) => {
-        const content = (msg.content || "").trim();
-        return content && content.toLowerCase().includes(searchKeyword.toLowerCase());
-      })
+      const content = (msg.content || "").trim();
+      return content && content.toLowerCase().includes(searchKeyword.toLowerCase());
+    })
     : session.messages;
 
   return (
@@ -577,13 +577,13 @@ function SearchResultsPanel({
 function stem(w: string): string {
   if (w.length <= 3) return w;
   const rules: [string, string][] = [
-    ["ations","ate"],["nesses",""],["ments",""],["ities",""],
-    ["ation","ate"],["tions",""],["izing",""],["ising",""],
-    ["ness",""],["ment",""],["ical",""],["able",""],["ible",""],
-    ["ized",""],["ised",""],["ings",""],["ally",""],["edly",""],
-    ["ing",""],["ied","y"],["ies","y"],["ion",""],["ive",""],
-    ["ous",""],["ful",""],["ish",""],["ed",""],["er",""],
-    ["es",""],["ly",""],["s",""],
+    ["ations", "ate"], ["nesses", ""], ["ments", ""], ["ities", ""],
+    ["ation", "ate"], ["tions", ""], ["izing", ""], ["ising", ""],
+    ["ness", ""], ["ment", ""], ["ical", ""], ["able", ""], ["ible", ""],
+    ["ized", ""], ["ised", ""], ["ings", ""], ["ally", ""], ["edly", ""],
+    ["ing", ""], ["ied", "y"], ["ies", "y"], ["ion", ""], ["ive", ""],
+    ["ous", ""], ["ful", ""], ["ish", ""], ["ed", ""], ["er", ""],
+    ["es", ""], ["ly", ""], ["s", ""],
   ];
   for (const [suf, rep] of rules) {
     if (w.endsWith(suf) && w.length - suf.length >= 3)
@@ -594,25 +594,25 @@ function stem(w: string): string {
 
 // Related-term clusters for AI/tech domains
 const CLUSTERS: string[][] = [
-  ["ai","artificial intelligence","ml","machine learning","deep learning","neural network","llm","gpt","language model","generative","transformer"],
-  ["python","py","pandas","numpy","sklearn","scikit","tensorflow","pytorch","keras","jupyter","notebook","colab"],
-  ["javascript","js","typescript","ts","node","nodejs","react","vue","angular","frontend","web","browser","dom","html","css"],
-  ["code","coding","programming","program","script","scripting","software","development","developer","implement","implementation","engineer"],
-  ["data","dataset","database","sql","nosql","mongo","postgres","mysql","query","analytics","analysis","statistics","excel","csv","json"],
-  ["api","rest","restful","http","endpoint","request","response","graphql","websocket","fetch","axios","webhook"],
-  ["bug","error","issue","problem","fix","debug","debugging","crash","exception","traceback","troubleshoot"],
-  ["cloud","aws","azure","gcp","docker","kubernetes","container","devops","cicd","deploy","deployment","server","hosting"],
-  ["image","photo","picture","vision","ocr","recognition","detect","detection","classify","segmentation"],
-  ["nlp","natural language","text","sentence","token","embed","embedding","semantic","sentiment","summarize","summarization"],
-  ["function","method","class","object","variable","array","list","dict","map","loop","recursion","algorithm"],
-  ["test","testing","unit test","integration","mock","assert","jest","pytest","qa","quality"],
-  ["git","github","gitlab","version","branch","commit","merge","pull request","pr","repo","repository"],
-  ["design","ui","ux","interface","layout","figma","style","color","font","responsive","accessibility"],
-  ["performance","speed","optimiz","latency","throughput","cache","scalab","efficient"],
-  ["security","auth","authentication","login","password","encrypt","jwt","oauth","token","permission","access"],
-  ["finance","stock","invest","trading","crypto","blockchain","bitcoin","market","portfolio","dividend"],
-  ["health","medical","doctor","hospital","medicine","drug","diagnosis","symptom","treatment","clinical"],
-  ["power bi","dax","powerbi","measure","visual","report","dashboard","bi","business intelligence","kpi"],
+  ["ai", "artificial intelligence", "ml", "machine learning", "deep learning", "neural network", "llm", "gpt", "language model", "generative", "transformer"],
+  ["python", "py", "pandas", "numpy", "sklearn", "scikit", "tensorflow", "pytorch", "keras", "jupyter", "notebook", "colab"],
+  ["javascript", "js", "typescript", "ts", "node", "nodejs", "react", "vue", "angular", "frontend", "web", "browser", "dom", "html", "css"],
+  ["code", "coding", "programming", "program", "script", "scripting", "software", "development", "developer", "implement", "implementation", "engineer"],
+  ["data", "dataset", "database", "sql", "nosql", "mongo", "postgres", "mysql", "query", "analytics", "analysis", "statistics", "excel", "csv", "json"],
+  ["api", "rest", "restful", "http", "endpoint", "request", "response", "graphql", "websocket", "fetch", "axios", "webhook"],
+  ["bug", "error", "issue", "problem", "fix", "debug", "debugging", "crash", "exception", "traceback", "troubleshoot"],
+  ["cloud", "aws", "azure", "gcp", "docker", "kubernetes", "container", "devops", "cicd", "deploy", "deployment", "server", "hosting"],
+  ["image", "photo", "picture", "vision", "ocr", "recognition", "detect", "detection", "classify", "segmentation"],
+  ["nlp", "natural language", "text", "sentence", "token", "embed", "embedding", "semantic", "sentiment", "summarize", "summarization"],
+  ["function", "method", "class", "object", "variable", "array", "list", "dict", "map", "loop", "recursion", "algorithm"],
+  ["test", "testing", "unit test", "integration", "mock", "assert", "jest", "pytest", "qa", "quality"],
+  ["git", "github", "gitlab", "version", "branch", "commit", "merge", "pull request", "pr", "repo", "repository"],
+  ["design", "ui", "ux", "interface", "layout", "figma", "style", "color", "font", "responsive", "accessibility"],
+  ["performance", "speed", "optimiz", "latency", "throughput", "cache", "scalab", "efficient"],
+  ["security", "auth", "authentication", "login", "password", "encrypt", "jwt", "oauth", "token", "permission", "access"],
+  ["finance", "stock", "invest", "trading", "crypto", "blockchain", "bitcoin", "market", "portfolio", "dividend"],
+  ["health", "medical", "doctor", "hospital", "medicine", "drug", "diagnosis", "symptom", "treatment", "clinical"],
+  ["power bi", "dax", "powerbi", "measure", "visual", "report", "dashboard", "bi", "business intelligence", "kpi"],
 ];
 
 function getSynonyms(word: string, stemmedWord: string): string[] {
@@ -644,7 +644,7 @@ function wordScore(text: string, word: string, stemmedWord: string, synonyms: st
 
 // ────────────────────────────────────────────────────────────────────────────
 
-export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange, onResultsPanelContentChange, panelResetKey, sessions = [], sessionsLoading = false, selectedAgents = [], onSelectConversation }: GraphCenterProps) {
+export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange, onResultsPanelContentChange, onSelectConversation, panelResetKey, sessions = [], sessionsLoading = false, selectedAgents = [] }: GraphCenterProps) {
   // null = auto mode (show all matches); set to a nodeId when user clicks a specific node
   const [pinnedNodeId, setPinnedNodeId] = useState<number | null>(null);
   const [clickedSessions, setClickedSessions] = useState<ChatSession[]>([]);
@@ -707,26 +707,26 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
     if (committedKw.length < 2) return [];
 
     const STOP = new Set([
-      "the","a","an","is","in","of","and","or","to","for","with","on","at",
-      "by","it","as","be","was","are","were","has","have","had","do","does",
-      "did","i","my","me","what","how","why","when","where","who","about",
-      "can","could","would","should","that","this","these","those","then",
-      "than","from","not","but","so","if","all","any","will","just","also",
-      "into","its","their","they","them","there","here","get","got","use",
-      "using","used","make","made","want","need","help","please","give",
+      "the", "a", "an", "is", "in", "of", "and", "or", "to", "for", "with", "on", "at",
+      "by", "it", "as", "be", "was", "are", "were", "has", "have", "had", "do", "does",
+      "did", "i", "my", "me", "what", "how", "why", "when", "where", "who", "about",
+      "can", "could", "would", "should", "that", "this", "these", "those", "then",
+      "than", "from", "not", "but", "so", "if", "all", "any", "will", "just", "also",
+      "into", "its", "their", "they", "them", "there", "here", "get", "got", "use",
+      "using", "used", "make", "made", "want", "need", "help", "please", "give",
     ]);
 
     const rawWords = committedKw.split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
     if (rawWords.length === 0) return [];
 
-    const stemmedRaw  = rawWords.map(stem);
+    const stemmedRaw = rawWords.map(stem);
     const synonymsRaw = rawWords.map((w, i) => getSynonyms(w, stemmedRaw[i]));
 
     // More lenient threshold for longer queries
     const minMatchCount =
       rawWords.length <= 2 ? rawWords.length :
-      rawWords.length <= 4 ? Math.ceil(rawWords.length * 0.5) :
-                             Math.ceil(rawWords.length * 0.4);
+        rawWords.length <= 4 ? Math.ceil(rawWords.length * 0.5) :
+          Math.ceil(rawWords.length * 0.4);
 
     // Full phrase match is a very strong signal
     const fullPhrase = rawWords.join(" ");
@@ -755,12 +755,12 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
         // Per-word scoring with stemming + synonyms, against USER messages only.
         for (let i = 0; i < rawWords.length; i++) {
           const word = rawWords[i];
-          const sw   = stemmedRaw[i];
+          const sw = stemmedRaw[i];
           const syns = synonymsRaw[i];
 
           const best = wordScore(userText, word, sw, syns);
           if (best > 0) {
-            score   += best * 20;
+            score += best * 20;
             matched += best; // fractional credit for partial/synonym matches
           }
         }
@@ -776,11 +776,11 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
   // in one pass over matchingSessions so they're always in sync.
   const { highlightedNodes, nodeSessionsMap, nodeDates } = useMemo(() => {
     const colorMap = new Map<number, string>();
-    const sessMap  = new Map<number, ChatSession[]>();
-    const dateMap  = new Map<number, string>();
+    const sessMap = new Map<number, ChatSession[]>();
+    const dateMap = new Map<number, string>();
     matchingSessions.forEach((s) => {
       const nodeId = sessionToNodeId(s.id);
-      const color  = (s.platform && PLATFORM_COLORS[s.platform]) ? PLATFORM_COLORS[s.platform] : "#3b82f6";
+      const color = (s.platform && PLATFORM_COLORS[s.platform]) ? PLATFORM_COLORS[s.platform] : "#3b82f6";
       colorMap.set(nodeId, color);
       const existing = sessMap.get(nodeId) ?? [];
       sessMap.set(nodeId, [...existing, s]);
@@ -841,7 +841,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
         setAnswerSections(result.answerSections ?? []);
         setN8nSummary(result.n8nSummary ?? null);
         onAiSourcesChange?.(result.sources);
-        onAiAnswerReady?.(submittedKw, result.answer);
+        onAiAnswerReady?.(searchKeyword.trim().toLowerCase(), result.answer);
       } catch (err) {
         console.error('[GraphCenter] search failed', err);
         if (cancelled) return;
@@ -863,7 +863,7 @@ export function GraphCenter({ searchKeyword, searchTriggerKey = 0, onAiSourcesCh
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTriggerKey, selectedAgents, onAiSourcesChange, onAiAnswerReady, onAiLoadingChange]);
 
   // Clicking a node: pin to that node's sessions and open the conversation popup.

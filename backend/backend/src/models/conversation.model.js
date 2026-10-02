@@ -42,6 +42,19 @@ const conversationSchema = new mongoose.Schema(
       default: 'PENDING',
       index: true,
     },
+    // ── Platform timestamps (added for timestamp pipeline) ──────
+    timestamps: {
+      created_at:  Date,
+      published_at: Date,
+      updated_at:   Date,
+      edited_at:    Date,
+      scraped_at:   Date,
+    },
+    timestamp_source:     String,
+    timestamp_confidence: String,
+    original_timezone:    String,
+    timestamp_raw:        String,
+    // ── End timestamp fields ────────────────────────────────────
     enrichment: {
       topic: String,
       category: String,

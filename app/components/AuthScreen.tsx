@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Mail, Lock, Eye, EyeOff, AlertCircle, Check,
@@ -9,8 +9,15 @@ import {
 import { useSignUp, useSignIn, useAuth } from "@clerk/nextjs";
 import { Logo } from "./Logo";
 import { GoogleSignInButton } from "./GoogleSignInButton";
-import { isEmailValid, checkPassword } from "@/app/lib/auth";
-import { clerkLogin, googleLogin } from "@/app/lib/api";
+import {
+  checkPassword,
+  isEmailValid,
+  saveRememberMe,
+  clearRememberMe,
+  getSavedEmail,
+  setSession,
+} from "@/app/lib/auth";
+import { clerkLogin, googleLogin, passwordAuth } from "@/app/lib/api";
 
 interface AuthScreenProps {
   onAuthenticated: (email: string) => void;
@@ -94,6 +101,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const { getToken } = useAuth();
 
   const [mode, setMode] = useState<Mode>("login");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -116,21 +124,30 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [resetStep, setResetStep] = useState<"request" | "code" | "newPassword">("request");
   const [resetEmailUsed, setResetEmailUsed] = useState("");
 
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // Load saved email on mount
+  useEffect(() => {
+    const saved = getSavedEmail();
+    if (saved) {
+      const timer = window.setTimeout(() => {
+        setEmail(saved);
+        setRememberMe(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
   const rules = checkPassword(password);
-  const newRules = checkPassword(newPassword);
   const emailLooksValid = email.length === 0 || isEmailValid(email);
 
-  // ── Google sign-in (unchanged) ─────────────────────────────────────────────
+  // ── Google sign-in ───────────────────────────────────────────────────────
   async function handleGoogleCredential(credential: string) {
     setError(null);
     setLoading(true);
     try {
       const res = await googleLogin(credential);
-      if (res.token) {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("shadowbrain_token", res.token);
-        }
-      }
+      setSession(res.user.email, res.token);
       onAuthenticated(res.user.email);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign-in failed. Please try again.");
@@ -151,23 +168,13 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!signIn) {
-      setError("Sign-in is not ready yet. Please try again.");
-      return;
-    }
     setLoading(true);
     try {
-      const res = await signIn.password({ emailAddress: email.trim(), password });
-      if (res.error) {
-        setError(res.error.message || "Invalid email or password.");
-        return;
-      }
-      if (signIn.status === "complete" && signIn.createdSessionId) {
-        await signIn.finalize();
-        await finalizeSession(email);
-      } else {
-        setError("Sign-in could not be completed. Please try again.");
-      }
+      const response = await passwordAuth(email.trim(), password, "login");
+      setSession(response.user.email, response.token);
+      if (rememberMe) saveRememberMe(response.user.email);
+      else clearRememberMe();
+      onAuthenticated(response.user.email);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed. Please try again.");
     } finally {
@@ -503,10 +510,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 />
                 {newPassword.length > 0 && (
                   <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2.5 rounded-xl" style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}>
-                    <RuleRow met={newRules.minLength} label="8+ characters" />
-                    <RuleRow met={newRules.hasLetter} label="A letter" />
-                    <RuleRow met={newRules.hasNumber} label="A number" />
-                    <RuleRow met={newRules.hasSymbol} label="A symbol" />
+                    <RuleRow met={rules.minLength} label="8+ characters" />
+                    <RuleRow met={rules.hasLetter} label="A letter" />
+                    <RuleRow met={rules.hasNumber} label="A number" />
+                    <RuleRow met={rules.hasSymbol} label="A symbol" />
                   </div>
                 )}
                 <AnimatePresence>{error && <ErrorBanner message={error} />}</AnimatePresence>
@@ -574,7 +581,15 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 />
 
                 <div className="flex items-center justify-between mt-0.5">
-                  <span className="text-[11.5px]" style={{ color: "var(--text-secondary)" }}>Welcome back</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="rounded border-[var(--border-subtle)] bg-[var(--bg-surface)] w-3 h-3 accent-[var(--blue)]"
+                    />
+                    <span className="text-[11.5px]" style={{ color: "var(--text-secondary)" }}>Remember me</span>
+                  </label>
                   <button
                     type="button"
                     onClick={() => switchMode("forgot")}

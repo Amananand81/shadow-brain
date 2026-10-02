@@ -1,10 +1,11 @@
-require('dotenv').config();
+require('./config/env')();
 const app        = require('./app');
 const connectDB  = require('./config/db');
 const logger     = require('./utils/logger');
 const enrichment = require('./services/enrichment.service');
 
 const PORT = process.env.PORT || 8000;
+const USE_HTTPS = process.env.USE_HTTPS === 'true' || !!process.env.HTTPS_KEY || !!process.env.HTTPS_KEY_PATH;
 
 // ── DEBUG: Print all environment variables (mask secrets) ────────
 console.log(`\n[SERVER] ═══════════════════════════════════════════════`);
@@ -60,6 +61,45 @@ const retryPendingSafely = () => {
 };
 
 connectDB().then(() => {
+  // If HTTPS materials are provided and USE_HTTPS true, start an HTTPS server.
+  if (USE_HTTPS && process.env.NODE_ENV === 'production') {
+    try {
+      const fs = require('fs');
+      const https = require('https');
+
+      // Support direct key/cert via env or file paths
+      const key = process.env.HTTPS_KEY || (process.env.HTTPS_KEY_PATH ? fs.readFileSync(process.env.HTTPS_KEY_PATH) : undefined);
+      const cert = process.env.HTTPS_CERT || (process.env.HTTPS_CERT_PATH ? fs.readFileSync(process.env.HTTPS_CERT_PATH) : undefined);
+      const ca = process.env.HTTPS_CA || (process.env.HTTPS_CA_PATH ? fs.readFileSync(process.env.HTTPS_CA_PATH) : undefined);
+
+      if (!key || !cert) {
+        console.warn('[SERVER] HTTPS enabled but missing key/cert; falling back to HTTP');
+      } else {
+        const credentials = { key, cert };
+        if (ca) credentials.ca = ca;
+        const server = https.createServer(credentials, app).listen(PORT, () => {
+          console.log(`\n[SERVER] ═══════════════════════════════════════════════`);
+          console.log(`[SERVER] HTTPS server listening on port ${PORT}`);
+          console.log(`[SERVER] Environment: ${process.env.NODE_ENV}`);
+          console.log(`[SERVER] Health check: https://localhost:${PORT}/health`);
+          console.log(`[SERVER] Import endpoint: https://localhost:${PORT}/api/import/capture`);
+          console.log(`[SERVER] Conversations endpoint: https://localhost:${PORT}/api/conversations`);
+          console.log(`[SERVER] ═══════════════════════════════════════════════\n`);
+          logger.info(`HTTPS server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+        });
+
+        // schedule retries
+        setTimeout(retryPendingSafely, 3000);
+        setInterval(retryPendingSafely, 5 * 60 * 1000);
+        return;
+      }
+    } catch (err) {
+      console.error(`[SERVER] Failed to start HTTPS server: ${err.message}`);
+      logger.error(`[SERVER] Failed to start HTTPS server: ${err.stack}`);
+    }
+  }
+
+  // Default: HTTP server (keeps existing behavior). When behind a proxy, use TRUST_PROXY env and HTTPS redirect in app.js.
   app.listen(PORT, () => {
     console.log(`\n[SERVER] ═══════════════════════════════════════════════`);
     console.log(`[SERVER] Server listening on port ${PORT}`);

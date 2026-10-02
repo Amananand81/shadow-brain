@@ -7,7 +7,10 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest --runInBand test/auth.integration.test.js",
+    "db:up": "docker compose -f ../../docker-compose.yml up -d mongodb",
+    "db:down": "docker compose -f ../../docker-compose.yml down",
+    "dev:with-db": "npm run db:up && node --watch src/server.js",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js"
   },
@@ -17,16 +20,24 @@
   "type": "commonjs",
   "dependencies": {
     "@clerk/backend": "^3.16.13",
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
     "google-auth-library": "^10.9.0",
+    "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.1",
     "morgan": "^1.11.0",
+    "nodemailer": "^10.0.11",
     "openai": "^6.44.0",
     "uuid": "^14.0.0",
     "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2",
+    "supertest": "^7.3.0"
   }
 }

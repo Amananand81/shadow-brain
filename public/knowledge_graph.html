@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Shadow Brain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #05030A;
+    --bg-tint: #0a0614;
+    --panel-bg: rgba(18, 10, 28, 0.42);
+    --panel-border: rgba(178, 140, 255, 0.16);
+    --panel-border-strong: rgba(200, 160, 255, 0.28);
+    --text-primary: #F3EEFB;
+    --text-dim: #9C90B8;
+    --text-faint: #6b6284;
+    --accent-pink: #FF3D9A;
+    --accent-violet: #8A5CFF;
+    --accent-cyan: #39E8DA;
+    --accent-amber: #FFC15C;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{
+    width:100%; height:100%;
+    background: radial-gradient(ellipse at 50% 40%, #0d0716 0%, #05030A 55%, #030208 100%);
+    overflow:hidden;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+  #app{ position:relative; width:100vw; height:100vh; }
+  #canvas{ position:absolute; inset:0; display:block; touch-action:none; cursor: grab; }
+  #canvas.dragging{ cursor: grabbing; }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 22px 28px;
+    pointer-events:none;
+    z-index:5;
+  }
+  .brand{
+    display:flex; align-items:center; gap:12px;
+    pointer-events:auto;
+  }
+  .brand-mark{
+    width:34px; height:34px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #ff8ecb 0%, #d13dff 35%, #5a2bb8 70%, transparent 100%);
+    box-shadow: 0 0 18px rgba(255, 61, 154, 0.55), 0 0 34px rgba(138, 92, 255, 0.35);
+  }
+  .brand-text{ display:flex; flex-direction:column; line-height:1.15; }
+  .brand-text .title{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600; font-size:15px; letter-spacing:0.14em;
+    text-transform:uppercase; color: var(--text-primary);
+  }
+  .brand-text .subtitle{
+    font-size:11px; color: var(--text-faint); letter-spacing:0.04em; margin-top:2px;
+  }
+
+  .stats{
+    display:flex; gap:10px; pointer-events:auto;
+  }
+  .stat-chip{
+    background: var(--panel-bg);
+    border:1px solid var(--panel-border);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-radius: 12px;
+    padding: 9px 16px;
+    display:flex; flex-direction:column; align-items:flex-end;
+    min-width:82px;
+  }
+  .stat-chip .num{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:15px; font-weight:600; color: var(--text-primary);
+  }
+  .stat-chip .label{
+    font-size:9.5px; color: var(--text-faint); letter-spacing:0.08em; text-transform:uppercase; margin-top:1px;
+  }
+
+  /* ---------- bottom hint ---------- */
+  .hint{
+    position:absolute; bottom:22px; left:50%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:18px;
+    padding:10px 20px;
+    background: var(--panel-bg);
+    border:1px solid var(--panel-border);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-radius: 30px;
+    font-size:11px; color: var(--text-dim); letter-spacing:0.02em;
+    pointer-events:none;
+    z-index:5;
+    transition: opacity 1s ease;
+  }
+  .hint span{ display:flex; align-items:center; gap:7px; white-space:nowrap; }
+  .hint .dot{ width:5px; height:5px; border-radius:50%; background: var(--accent-pink); box-shadow:0 0 6px var(--accent-pink); }
+
+  /* ---------- side info panel ---------- */
+  .info-panel{
+    position:absolute; top:90px; right:28px;
+    width: 300px;
+    background: var(--panel-bg);
+    border:1px solid var(--panel-border-strong);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: 18px;
+    padding: 20px 20px 18px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(138,92,255,0.06);
+    z-index:6;
+    opacity:0; transform: translateX(24px) scale(0.97);
+    pointer-events:none;
+    transition: opacity 0.35s cubic-bezier(.2,.9,.3,1), transform 0.35s cubic-bezier(.2,.9,.3,1);
+  }
+  .info-panel.visible{
+    opacity:1; transform: translateX(0) scale(1);
+    pointer-events:auto;
+  }
+  .info-panel .close-btn{
+    position:absolute; top:14px; right:14px;
+    width:22px; height:22px; border-radius:50%;
+    border:1px solid var(--panel-border);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-dim);
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; cursor:pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+  .info-panel .close-btn:hover{ background: rgba(255,61,154,0.15); color: var(--text-primary); }
+
+  .info-panel .kicker{
+    font-size:10px; letter-spacing:0.14em; text-transform:uppercase;
+    color: var(--accent-pink); margin-bottom:9px; font-weight:500;
+  }
+  .info-panel .node-title{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:19px; font-weight:600; line-height:1.28;
+    color: var(--text-primary);
+    margin-bottom:12px;
+    padding-right: 18px;
+  }
+  .info-panel .node-desc{
+    font-size:12.5px; line-height:1.6; color: var(--text-dim);
+    margin-bottom:16px;
+  }
+  .meta-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 9px 0; border-top:1px solid rgba(178,140,255,0.1);
+    font-size:11.5px;
+  }
+  .meta-row:first-of-type{ border-top:1px solid rgba(178,140,255,0.1); margin-top:2px; }
+  .meta-row .k{ color: var(--text-faint); letter-spacing:0.02em; }
+  .meta-row .v{ color: var(--text-primary); font-weight:500; }
+  .meta-row .v.pink{ color: var(--accent-pink); }
+  .meta-row .v.cyan{ color: var(--accent-cyan); }
+
+  @media (max-width: 640px){
+    .info-panel{ left:16px; right:16px; width:auto; top:auto; bottom:78px; }
+    .stats{ display:none; }
+    .brand-text .subtitle{ display:none; }
+    .hint{ font-size:10px; padding:8px 14px; gap:12px; bottom:16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="canvas"></canvas>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <div class="title">Shadow Brain</div>
+        <div class="subtitle">everything you've ever saved, drifting</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat-chip"><div class="num" id="statNodes">0</div><div class="label">Fragments</div></div>
+      <div class="stat-chip"><div class="num" id="statLinks">0</div><div class="label">Links</div></div>
+      <div class="stat-chip"><div class="num">6</div><div class="label">Clusters</div></div>
+    </div>
+  </div>
+
+  <div class="info-panel" id="infoPanel">
+    <div class="close-btn" id="closeBtn">✕</div>
+    <div class="kicker" id="panelKicker">Fragment</div>
+    <div class="node-title" id="panelTitle">—</div>
+    <div class="node-desc" id="panelDesc">—</div>
+    <div class="meta-row"><span class="k">Cluster</span><span class="v pink" id="panelCluster">—</span></div>
+    <div class="meta-row"><span class="k">Connections</span><span class="v" id="panelLinks">—</span></div>
+    <div class="meta-row"><span class="k">Last touched</span><span class="v cyan" id="panelTime">—</span></div>
+  </div>
+
+  <div class="hint">
+    <span><span class="dot"></span>Drag to rotate</span>
+    <span><span class="dot" style="background:var(--accent-violet);box-shadow:0 0 6px var(--accent-violet);"></span>Scroll to zoom</span>
+    <span><span class="dot" style="background:var(--accent-cyan);box-shadow:0 0 6px var(--accent-cyan);"></span>Click a node</span>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+
+  /* ============================================================
+     CONFIG
+  ============================================================ */
+  const SPHERE_RADIUS = 210;
+  const N_CLUSTERS = 6;
+  const NODES_PER_CLUSTER = [46, 40, 38, 34, 30, 26];
+  const N_DUST = 90; // scattered background nodes
+  const AUTO_ROTATE_SPEED = 0.08; // radians per second around the graph's own Y-axis
+
+  const PALETTE = [
+    0xff2e88, // hot pink
+    0xff6a5c, // coral
+    0xe63dc4, // magenta
+    0x9b4dff, // purple
+    0x7b3fe4, // violet
+    0x33e6d8, // cyan
+    0x1fd1c1, // turquoise
+    0xff8a3d, // orange
+    0xffce54, // warm yellow
+    0xf3ecff  // soft white
+  ];
+
+  const CLUSTER_NAMES = [
+    "Half-finished Ideas",
+    "Reading List",
+    "Voice Memos",
+    "Screenshots",
+    "Journal Fragments",
+    "Bookmarked Threads"
+  ];
+
+  const TITLE_POOL = [
+    "Untitled thought", "3am idea", "Voice memo · 0:47", "Screenshot, no context",
+    "Highlighted quote", "Draft that never sent", "Meeting note", "Half-read article",
+    "Tab left open for weeks", "Idea for later", "Random insight", "Quote from a stranger",
+    "Book passage, unfinished", "Podcast timestamp", "Napkin sketch", "Link, never opened",
+    "Something I meant to build", "Overheard on the train", "Note to self", "Forgotten password hint",
+    "Recipe I'll never cook", "Dream, half remembered", "Conversation snippet", "Old to-do item",
+    "Article, three tabs deep", "Interview clip", "Margin scribble", "Saved for inspiration",
+    "Reply I never sent", "Playlist note"
+  ];
+
+  const DESC_POOL = [
+    "Captured in a hurry between two other things. Never opened again.",
+    "Made sense at the time. The context is gone now.",
+    "Filed under 'someday'. Someday hasn't come yet.",
+    "One of a hundred similar notes, indistinguishable from the rest.",
+    "Saved with good intentions. Buried within the hour.",
+    "A fragment that felt important enough to keep, not important enough to use.",
+    "Sits next to a dozen almost-identical entries.",
+    "Written fast, read never.",
+    "Still technically 'to review'. Has been for months.",
+    "The kind of note that made a second brain feel necessary — and then didn't help."
+  ];
+
+  const rand = (a,b) => a + Math.random()*(b-a);
+  const pick = (arr) => arr[Math.floor(Math.random()*arr.length)];
+  const hexToRgb = (hex) => new THREE.Color(hex);
+
+  /* ============================================================
+     RENDERER / SCENE / CAMERA
+  ============================================================ */
+  const canvas = document.getElementById('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 1, 4000);
+  camera.position.set(0, 30, 640);
+
+  function resize(){
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const graphGroup = new THREE.Group();
+  scene.add(graphGroup);
+  const BASE_TILT_X = 0.18;
+  const BASE_ROTATION_Z = -0.04;
+  graphGroup.rotation.x = BASE_TILT_X;
+  graphGroup.rotation.z = BASE_ROTATION_Z;
+
+  /* ============================================================
+     GLOW TEXTURE (soft radial sprite)
+  ============================================================ */
+  function makeGlowTexture(){
+    const size = 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(size/2,size/2,0, size/2,size/2,size/2);
+    g.addColorStop(0.0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.2, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.45,'rgba(255,255,255,0.28)');
+    g.addColorStop(1.0, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,size,size);
+    const tex = new THREE.CanvasTexture(c);
+    return tex;
+  }
+  const glowTex = makeGlowTexture();
+
+  function makeSoftDiscTexture(){
+    const size = 256;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(size/2,size/2,0, size/2,size/2,size/2);
+    g.addColorStop(0.0, 'rgba(255,180,230,0.9)');
+    g.addColorStop(0.35,'rgba(220,120,255,0.35)');
+    g.addColorStop(0.7, 'rgba(140,80,220,0.10)');
+    g.addColorStop(1.0, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,size,size);
+    return new THREE.CanvasTexture(c);
+  }
+  const hazeTex = makeSoftDiscTexture();
+
+  /* ============================================================
+     ATMOSPHERIC HAZE (behind everything)
+  ============================================================ */
+  const hazeMat = new THREE.SpriteMaterial({
+    map: hazeTex, color: 0xffffff, transparent:true, opacity:0.55,
+    blending: THREE.AdditiveBlending, depthWrite:false
+  });
+  const haze = new THREE.Sprite(hazeMat);
+  haze.scale.set(SPHERE_RADIUS*3.2, SPHERE_RADIUS*3.2, 1);
+  graphGroup.add(haze);
+
+  /* ============================================================
+     LATITUDE / LONGITUDE STYLE RINGS (armillary sphere look)
+  ============================================================ */
+  const ringMat = new THREE.LineBasicMaterial({
+    color: 0xb9a6ff, transparent:true, opacity:0.14
+  });
+  const ringGroup = new THREE.Group();
+  for(let i=0;i<12;i++){
+    const curve = new THREE.EllipseCurve(0,0, SPHERE_RADIUS, SPHERE_RADIUS, 0, 2*Math.PI, false, 0);
+    const pts = curve.getPoints(96);
+    const geo = new THREE.BufferGeometry().setFromPoints(pts.map(p=>new THREE.Vector3(p.x,p.y,0)));
+    const line = new THREE.LineLoop(geo, ringMat);
+    line.rotation.x = Math.random()*Math.PI;
+    line.rotation.y = Math.random()*Math.PI;
+    line.rotation.z = Math.random()*Math.PI;
+    ringGroup.add(line);
+  }
+  graphGroup.add(ringGroup);
+
+  // bright equatorial disk ring (like the reference image's pink halo band)
+  const eqCurve = new THREE.EllipseCurve(0,0, SPHERE_RADIUS*0.98, SPHERE_RADIUS*0.98, 0, 2*Math.PI, false, 0);
+  const eqPts = eqCurve.getPoints(160);
+  const eqGeo = new THREE.BufferGeometry().setFromPoints(eqPts.map(p=>new THREE.Vector3(p.x,p.y,0)));
+  const eqMat = new THREE.LineBasicMaterial({ color:0xff6fc0, transparent:true, opacity:0.35 });
+  const eqRing = new THREE.LineLoop(eqGeo, eqMat);
+  eqRing.rotation.x = Math.PI/2 + 0.12;
+  eqRing.rotation.z = 0.08;
+  graphGroup.add(eqRing);
+
+  /* ============================================================
+     CENTRAL CORE
+  ============================================================ */
+  const coreGroup = new THREE.Group();
+  const coreOuter = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xff4fb0, transparent:true, opacity:0.9,
+    blending: THREE.AdditiveBlending, depthWrite:false
+  }));
+  coreOuter.scale.set(70,70,1);
+  const coreInner = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xffffff, transparent:true, opacity:1,
+    blending: THREE.AdditiveBlending, depthWrite:false
+  }));
+  coreInner.scale.set(22,22,1);
+  coreGroup.add(coreOuter, coreInner);
+  graphGroup.add(coreGroup);
+
+  /* ============================================================
+     BUILD NODE DATA
+  ============================================================ */
+  const nodeData = []; // {pos:THREE.Vector3, color, baseSize, cluster, title, desc, degree}
+
+  function fibonacciSphereCenters(n, radius){
+    const pts = [];
+    const off = 2/n;
+    const inc = Math.PI * (3 - Math.sqrt(5));
+    for(let i=0;i<n;i++){
+      const y = ((i*off)-1) + off/2;
+      const r = Math.sqrt(Math.max(0,1-y*y));
+      const phi = i*inc;
+      pts.push(new THREE.Vector3(Math.cos(phi)*r*radius, y*radius, Math.sin(phi)*r*radius));
+    }
+    return pts;
+  }
+
+  const clusterCenters = fibonacciSphereCenters(N_CLUSTERS, SPHERE_RADIUS*0.72);
+
+  // cluster hub nodes + members
+  const clusterNodeIndices = []; // array of arrays
+  for(let ci=0; ci<N_CLUSTERS; ci++){
+    const indices = [];
+    const center = clusterCenters[ci];
+    const clusterColor = PALETTE[ci % PALETTE.length];
+
+    // hub node (bigger, named)
+    const hubIdx = nodeData.length;
+    nodeData.push({
+      pos: center.clone(),
+      color: clusterColor,
+      baseSize: rand(13,16),
+      cluster: ci,
+      title: CLUSTER_NAMES[ci],
+      desc: "A dense cluster of related fragments — the closest thing this archive has to a memory that's actually findable.",
+      isHub: true,
+      degree: 0
+    });
+    indices.push(hubIdx);
+
+    const count = NODES_PER_CLUSTER[ci];
+    for(let k=0;k<count;k++){
+      // gaussian-ish jitter around center, staying near sphere shell
+      const dir = new THREE.Vector3(rand(-1,1), rand(-1,1), rand(-1,1)).normalize();
+      const spread = rand(14, 78);
+      const p = center.clone().add(dir.multiplyScalar(spread));
+      p.setLength(SPHERE_RADIUS * rand(0.55, 1.0));
+
+      const col = Math.random() < 0.6 ? clusterColor : pick(PALETTE);
+      const idx = nodeData.length;
+      nodeData.push({
+        pos: p,
+        color: col,
+        baseSize: rand(3.5, 7.5),
+        cluster: ci,
+        title: pick(TITLE_POOL),
+        desc: pick(DESC_POOL),
+        isHub:false,
+        degree: 0
+      });
+      indices.push(idx);
+    }
+    clusterNodeIndices.push(indices);
+  }
+
+  // scattered dust nodes (no strong cluster affinity)
+  for(let i=0;i<N_DUST;i++){
+    const dir = new THREE.Vector3(rand(-1,1), rand(-1,1), rand(-1,1)).normalize();
+    const p = dir.multiplyScalar(SPHERE_RADIUS * rand(0.3, 1.05));
+    nodeData.push({
+      pos: p,
+      color: pick(PALETTE),
+      baseSize: rand(2.5, 5),
+      cluster: -1,
+      title: pick(TITLE_POOL),
+      desc: pick(DESC_POOL),
+      isHub:false,
+      degree:0
+    });
+  }
+
+  const N = nodeData.length;
+
+  /* ============================================================
+     EDGES
+  ============================================================ */
+  const edges = []; // [i,j]
+
+  function nearestWithin(indices, idx, k){
+    const p = nodeData[idx].pos;
+    const dists = indices.filter(j=>j!==idx).map(j=>({ j, d: p.distanceToSquared(nodeData[j].pos) }));
+    dists.sort((a,b)=>a.d-b.d);
+    return dists.slice(0,k).map(o=>o.j);
+  }
+
+  clusterNodeIndices.forEach((indices, ci) => {
+    const hubIdx = indices[0];
+    // connect a subset of members directly to hub
+    indices.slice(1).forEach((idx, k) => {
+      if(k % 3 === 0){
+        edges.push([hubIdx, idx]);
+      }
+      // connect to nearest neighbours within cluster for a web-like feel
+      const nn = nearestWithin(indices, idx, 2);
+      nn.forEach(j => { if(Math.random() < 0.55) edges.push([idx, j]); });
+    });
+  });
+
+  // hubs interlink lightly through the core / to nearest other hubs
+  for(let ci=0; ci<N_CLUSTERS; ci++){
+    const hubIdx = clusterNodeIndices[ci][0];
+    const nextHub = clusterNodeIndices[(ci+1)%N_CLUSTERS][0];
+    edges.push([hubIdx, nextHub]);
+  }
+
+  // sprinkle a few long-range cross-links for that "tangled notes" look
+  for(let i=0;i<26;i++){
+    const a = Math.floor(Math.random()*N);
+    const b = Math.floor(Math.random()*N);
+    if(a!==b) edges.push([a,b]);
+  }
+
+  // dedupe & compute degree + adjacency
+  const edgeSet = new Set();
+  const adjacency = Array.from({length:N}, () => []);
+  const cleanEdges = [];
+  edges.forEach(([a,b]) => {
+    const key = a<b ? a+'_'+b : b+'_'+a;
+    if(edgeSet.has(key)) return;
+    edgeSet.add(key);
+    cleanEdges.push([a,b]);
+    adjacency[a].push(b);
+    adjacency[b].push(a);
+    nodeData[a].degree++;
+    nodeData[b].degree++;
+  });
+
+  /* ============================================================
+     POINTS (nodes) — custom shader for per-vertex size + hover boost
+  ============================================================ */
+  const positions = new Float32Array(N*3);
+  const colors = new Float32Array(N*3);
+  const sizes = new Float32Array(N);
+  const baseSizes = new Float32Array(N);
+  const phases = new Float32Array(N);
+
+  for(let i=0;i<N;i++){
+    const nd = nodeData[i];
+    positions[i*3] = nd.pos.x;
+    positions[i*3+1] = nd.pos.y;
+    positions[i*3+2] = nd.pos.z;
+    const c = hexToRgb(nd.color);
+    colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+    baseSizes[i] = nd.baseSize;
+    sizes[i] = nd.baseSize;
+    phases[i] = Math.random()*Math.PI*2;
+  }
+
+  const nodeGeo = new THREE.BufferGeometry();
+  nodeGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  nodeGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  nodeGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const nodeMat = new THREE.ShaderMaterial({
+    uniforms: { pointTexture: { value: glowTex } },
+    vertexShader: `
+      attribute float size;
+      attribute vec3 color;
+      varying vec3 vColor;
+      void main(){
+        vColor = color;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (420.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D pointTexture;
+      varying vec3 vColor;
+      void main(){
+        vec4 tex = texture2D(pointTexture, gl_PointCoord);
+        gl_FragColor = vec4(vColor, 1.0) * tex;
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const points = new THREE.Points(nodeGeo, nodeMat);
+  graphGroup.add(points);
+
+  /* ============================================================
+     LINES (connections) — dim base network
+  ============================================================ */
+  const linePositions = new Float32Array(cleanEdges.length*2*3);
+  const lineColors = new Float32Array(cleanEdges.length*2*3);
+  const baseLineColor = new THREE.Color(0xb9a6ff);
+
+  cleanEdges.forEach(([a,b], i) => {
+    linePositions[i*6]   = positions[a*3];
+    linePositions[i*6+1] = positions[a*3+1];
+    linePositions[i*6+2] = positions[a*3+2];
+    linePositions[i*6+3] = positions[b*3];
+    linePositions[i*6+4] = positions[b*3+1];
+    linePositions[i*6+5] = positions[b*3+2];
+    for(let k=0;k<2;k++){
+      lineColors[i*6+k*3]   = baseLineColor.r;
+      lineColors[i*6+k*3+1] = baseLineColor.g;
+      lineColors[i*6+k*3+2] = baseLineColor.b;
+    }
+  });
+
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+  lineGeo.setAttribute('color', new THREE.BufferAttribute(lineColors, 3));
+  const lineMat = new THREE.LineBasicMaterial({
+    vertexColors: true, transparent:true, opacity:0.16, blending: THREE.AdditiveBlending, depthWrite:false
+  });
+  const lines = new THREE.LineSegments(lineGeo, lineMat);
+  graphGroup.add(lines);
+
+  /* ---- highlight lines (shown only around hovered/selected node) ---- */
+  const MAX_DEGREE_GUESS = 24;
+  const hlPositions = new Float32Array(MAX_DEGREE_GUESS*2*3);
+  const hlGeo = new THREE.BufferGeometry();
+  hlGeo.setAttribute('position', new THREE.BufferAttribute(hlPositions, 3));
+  hlGeo.setDrawRange(0,0);
+  const hlMat = new THREE.LineBasicMaterial({
+    color: 0xffffff, transparent:true, opacity:0.85, blending: THREE.AdditiveBlending, depthWrite:false
+  });
+  const highlightLines = new THREE.LineSegments(hlGeo, hlMat);
+  graphGroup.add(highlightLines);
+
+  function setHighlightEdgesFor(idx){
+    if(idx === null){ hlGeo.setDrawRange(0,0); return; }
+    const neighbours = adjacency[idx] || [];
+    const arr = hlGeo.attributes.position.array;
+    let n = 0;
+    for(let k=0;k<neighbours.length && n<MAX_DEGREE_GUESS;k++){
+      const j = neighbours[k];
+      arr[n*6]   = positions[idx*3];
+      arr[n*6+1] = positions[idx*3+1];
+      arr[n*6+2] = positions[idx*3+2];
+      arr[n*6+3] = positions[j*3];
+      arr[n*6+4] = positions[j*3+1];
+      arr[n*6+5] = positions[j*3+2];
+      n++;
+    }
+    hlGeo.attributes.position.needsUpdate = true;
+    hlGeo.setDrawRange(0, n*2);
+  }
+
+  /* ============================================================
+     FLOATING PARTICLES OUTSIDE THE SPHERE
+  ============================================================ */
+  const N_PARTICLES = 220;
+  const pPositions = new Float32Array(N_PARTICLES*3);
+  const pColors = new Float32Array(N_PARTICLES*3);
+  const pSizes = new Float32Array(N_PARTICLES);
+  const softWhite = new THREE.Color(0xd9c9ff);
+  for(let i=0;i<N_PARTICLES;i++){
+    const dir = new THREE.Vector3(rand(-1,1), rand(-1,1), rand(-1,1)).normalize();
+    const r = SPHERE_RADIUS * rand(1.05, 1.9);
+    const p = dir.multiplyScalar(r);
+    pPositions[i*3]=p.x; pPositions[i*3+1]=p.y; pPositions[i*3+2]=p.z;
+    pColors[i*3]=softWhite.r; pColors[i*3+1]=softWhite.g; pColors[i*3+2]=softWhite.b;
+    pSizes[i] = rand(1.2, 3);
+  }
+  const particleGeo = new THREE.BufferGeometry();
+  particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions,3));
+  particleGeo.setAttribute('color', new THREE.BufferAttribute(pColors,3));
+  particleGeo.setAttribute('size', new THREE.BufferAttribute(pSizes,1));
+  const particleMat = new THREE.ShaderMaterial({
+    uniforms: { pointTexture: { value: glowTex } },
+    vertexShader: `
+      attribute float size;
+      attribute vec3 color;
+      varying vec3 vColor;
+      void main(){
+        vColor = color;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (300.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D pointTexture;
+      varying vec3 vColor;
+      void main(){
+        vec4 tex = texture2D(pointTexture, gl_PointCoord);
+        gl_FragColor = vec4(vColor, 0.5) * tex;
+      }
+    `,
+    transparent:true, depthWrite:false, blending: THREE.AdditiveBlending
+  });
+  const particles = new THREE.Points(particleGeo, particleMat);
+  graphGroup.add(particles);
+
+  /* ============================================================
+     UI stat fill
+  ============================================================ */
+  document.getElementById('statNodes').textContent = N;
+  document.getElementById('statLinks').textContent = cleanEdges.length;
+
+  /* ============================================================
+     INTERACTION: drag rotate, wheel/pinch zoom, hover + click pick
+  ============================================================ */
+  let isDragging = false;
+  let lastX = 0, lastY = 0;
+  let velX = 0, velY = 0;
+  let userRotating = false;
+  let manualTiltX = 0; // drag-driven offset added on top of the ever-running auto rotation
+  let hoveredIndex = null;
+  let selectedIndex = null;
+  let locked = false;
+  const mouse = new THREE.Vector2(2,2);
+  const raycaster = new THREE.Raycaster();
+  raycaster.params.Points.threshold = 6;
+
+  const infoPanel = document.getElementById('infoPanel');
+  const closeBtn = document.getElementById('closeBtn');
+
+  function resetGraphRotation(){
+    graphGroup.rotation.y = 0;
+    manualTiltX = 0;
+    camera.position.set(0, 30, 640);
+    camera.lookAt(0, 0, 0);
+  }
+
+  window.addEventListener('message', (event) => {
+    if(!event.data || event.data.type !== 'shadow-brain-graph') return;
+    if(event.data.action === 'set-locked') locked = event.data.value === true;
+    if(event.data.action === 'reset-view') resetGraphRotation();
+  });
+
+  function fillPanel(idx){
+    const nd = nodeData[idx];
+    document.getElementById('panelKicker').textContent = nd.isHub ? 'Cluster hub' : 'Fragment';
+    document.getElementById('panelTitle').textContent = nd.title;
+    document.getElementById('panelDesc').textContent = nd.desc;
+    document.getElementById('panelCluster').textContent = nd.cluster >= 0 ? CLUSTER_NAMES[nd.cluster] : 'Unsorted';
+    document.getElementById('panelLinks').textContent = nd.degree;
+    const days = Math.floor(rand(1, 640));
+    document.getElementById('panelTime').textContent = days + ' days ago';
+  }
+
+  function selectNode(idx){
+    selectedIndex = idx;
+    if(idx === null){
+      infoPanel.classList.remove('visible');
+      setHighlightEdgesFor(hoveredIndex);
+      window.parent.postMessage({
+        type: 'shadow-brain-graph',
+        action: 'node-selected',
+        nodeId: null,
+        relatedNodeIds: []
+      }, window.location.origin);
+      return;
+    }
+    fillPanel(idx);
+    infoPanel.classList.add('visible');
+    setHighlightEdgesFor(idx);
+    window.parent.postMessage({
+      type: 'shadow-brain-graph',
+      action: 'node-selected',
+      nodeId: idx,
+      relatedNodeIds: adjacency[idx] || []
+    }, window.location.origin);
+  }
+
+  closeBtn.addEventListener('click', () => selectNode(null));
+
+  function updateSizesForHover(){
+    const arr = nodeGeo.attributes.size.array;
+    for(let i=0;i<N;i++) arr[i] = baseSizes[i];
+    const boost = (idx, mult) => { if(idx!=null) arr[idx] = baseSizes[idx]*mult; };
+    boost(hoveredIndex, 2.1);
+    boost(selectedIndex, 2.4);
+    nodeGeo.attributes.size.needsUpdate = true;
+  }
+
+  function getPointerNDC(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  function pickNode(){
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(points);
+    if(intersects.length > 0){
+      return intersects[0].index;
+    }
+    return null;
+  }
+
+  // pointer events (mouse + touch unified)
+  const activePointers = new Map();
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if(locked) return;
+    canvas.setPointerCapture(e.pointerId);
+    activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(activePointers.size === 1){
+      isDragging = true;
+      userRotating = true;
+      lastX = e.clientX; lastY = e.clientY;
+      velX = 0; velY = 0;
+      canvas.classList.add('dragging');
+    }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if(activePointers.has(e.pointerId)) activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+    if(activePointers.size === 2){
+      // pinch to zoom
+      const pts = Array.from(activePointers.values());
+      const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+      if(canvas._pinchStart == null) canvas._pinchStart = dist;
+      else {
+        const delta = dist - canvas._pinchStart;
+        camera.position.z = THREE.MathUtils.clamp(camera.position.z - delta*0.8, 260, 1100);
+        canvas._pinchStart = dist;
+      }
+      return;
+    }
+
+    if(isDragging){
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      // additive on top of the continuous auto-rotation, which never pauses
+      graphGroup.rotation.y += dx * 0.0045;
+      manualTiltX = THREE.MathUtils.clamp(manualTiltX + dy*0.0045, -1.0, 1.0);
+      velX = dx * 0.0045;
+      velY = dy * 0.0045;
+      lastX = e.clientX; lastY = e.clientY;
+    } else {
+      getPointerNDC(e.clientX, e.clientY);
+      const idx = pickNode();
+      if(idx !== hoveredIndex){
+        hoveredIndex = idx;
+        updateSizesForHover();
+        canvas.style.cursor = idx !== null ? 'pointer' : 'grab';
+        if(selectedIndex === null) setHighlightEdgesFor(hoveredIndex);
+      }
+    }
+  });
+
+  function endDrag(e){
+    if(e && activePointers.has(e.pointerId)) activePointers.delete(e.pointerId);
+    if(activePointers.size === 0){
+      isDragging = false;
+      canvas._pinchStart = null;
+      canvas.classList.remove('dragging');
+      setTimeout(() => { userRotating = false; }, 900);
+    }
+  }
+  canvas.addEventListener('pointerup', (e) => {
+    // treat as click if barely moved
+    const moved = Math.abs(velX) + Math.abs(velY);
+    endDrag(e);
+    if(moved < 0.02){
+      getPointerNDC(e.clientX, e.clientY);
+      const idx = pickNode();
+      selectNode(idx);
+    }
+  });
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointerleave', (e) => {
+    if(activePointers.size <= 1){ hoveredIndex = null; updateSizesForHover(); }
+  });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if(locked) return;
+    camera.position.z = THREE.MathUtils.clamp(camera.position.z + e.deltaY * 0.55, 260, 1100);
+  }, { passive:false });
+
+  /* ============================================================
+     ANIMATION LOOP
+  ============================================================ */
+  const clock = new THREE.Clock();
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    const t = clock.elapsedTime;
+
+    // Rotate the complete graph around its own Y-axis using frame-rate-independent time.
+    if(!locked && !isDragging) graphGroup.rotation.y += AUTO_ROTATE_SPEED * dt;
+    if(graphGroup.rotation.y > Math.PI * 2) graphGroup.rotation.y -= Math.PI * 2; // wrap, no snap/jump
+
+    if(isDragging){
+      velX *= 0.94; velY *= 0.94;
+    }
+    // Manual tilt remains available while the automatic Y rotation is paused during drag.
+    graphGroup.rotation.x = BASE_TILT_X + manualTiltX;
+    graphGroup.rotation.z = BASE_ROTATION_Z;
+
+    // node pulse (skip hovered/selected so their boosted size stays clean)
+    const sizeArr = nodeGeo.attributes.size.array;
+    for(let i=0;i<N;i++){
+      if(i===hoveredIndex || i===selectedIndex) continue;
+      const pulse = 1 + Math.sin(t*1.4 + phases[i]) * 0.12;
+      sizeArr[i] = baseSizes[i] * pulse;
+    }
+    nodeGeo.attributes.size.needsUpdate = true;
+
+    // core pulse
+    const corePulse = 1 + Math.sin(t*1.8)*0.12;
+    coreOuter.scale.set(70*corePulse, 70*corePulse, 1);
+    coreInner.scale.set(22*(1+Math.sin(t*2.4)*0.18), 22*(1+Math.sin(t*2.4)*0.18), 1);
+
+    // particle drift (slow orbit)
+    particles.rotation.y -= 0.0006;
+    particles.rotation.x = Math.sin(t*0.05)*0.05;
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,8 @@
 const Conversation = require('../models/conversation.model');
 const logger = require('../utils/logger');
+const { validateSearchInput } = require('../utils/keyword-extractor');
+
+const SEARCH_BATCH_LIMIT = 100;
 
 class ConversationService {
   async createOrUpdate(data, userId) {
@@ -125,6 +128,115 @@ class ConversationService {
       .sort(sort)
       .limit(limit)
       .skip((page - 1) * limit);
+  }
+
+  async searchByKeywords(keywords, userId, platforms) {
+    const validation = validateSearchInput(keywords.join(' '));
+    if (!validation.valid) {
+      logger.warn(`[searchByKeywords] Invalid search input: ${validation.reason}`);
+      return { results: [], searchedAt: new Date().toISOString(), keywordSource: 'none' };
+    }
+
+    const userQuery = validation.sanitizedInput;
+    const kw = userQuery.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+    if (kw.length === 0) {
+      return { results: [], searchedAt: new Date().toISOString(), keywordSource: 'user_input' };
+    }
+
+    const wordRegexes = kw.map(w => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'));
+
+    const dbFilter = { userId };
+    if (Array.isArray(platforms) && platforms.length > 0) {
+      dbFilter.platform = { $in: platforms };
+    }
+
+    const allConvs = await this.list(dbFilter, { limit: SEARCH_BATCH_LIMIT });
+
+    const scored = allConvs
+      .map(conv => {
+        const metaText = [
+          conv.title || '',
+          conv.enrichment?.topic || '',
+          conv.enrichment?.summary || '',
+          ...(conv.enrichment?.keywords || []),
+        ].join(' ');
+
+        const scoredMsgs = conv.messages.map(m => {
+          const content = m.content || '';
+          const hits = wordRegexes.reduce((acc, re) => {
+            re.lastIndex = 0;
+            return acc + (content.match(re) || []).length;
+          }, 0);
+          return { msg: m, hits };
+        });
+
+        const metaScore = wordRegexes.reduce((acc, re) => {
+          re.lastIndex = 0;
+          return acc + (metaText.match(re) || []).length;
+        }, 0);
+
+        const totalScore = metaScore + scoredMsgs.reduce((a, x) => a + x.hits, 0);
+        const relevantMsgs = scoredMsgs.filter(x => x.hits > 0).map(x => x.msg);
+
+        return { conv, score: totalScore, relevantMsgs };
+      })
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    const context = scored.map(({ conv, relevantMsgs }, i) => {
+      const topic = conv.enrichment?.topic ? `Topic: ${conv.enrichment.topic}` : '';
+      const summary = conv.enrichment?.summary ? `Summary: ${conv.enrichment.summary}` : '';
+      const msgs = relevantMsgs.slice(0, 10)
+        .map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${(m.content || '').slice(0, 500)}`)
+        .join('\n');
+
+      return [
+        `CONVERSATION ${i + 1}:`,
+        `Title: ${conv.title || 'Untitled'}`,
+        `Platform: ${conv.platform}`,
+        topic, summary,
+        msgs ? 'Relevant messages:' : '',
+        msgs,
+      ].filter(Boolean).join('\n');
+    }).join('\n\n---\n\n');
+
+    const sources = [];
+    for (const { conv, relevantMsgs } of scored) {
+      if (relevantMsgs.length > 0) {
+        for (const msg of relevantMsgs.slice(0, 4)) {
+          sources.push({
+            id: msg._id?.toString() || conv._id.toString(),
+            convId: conv._id.toString(),
+            title: conv.title || 'Untitled',
+            platform: conv.platform || 'unknown',
+            role: msg.role,
+            snippet: (msg.content || '').slice(0, 200),
+            keywords: conv.enrichment?.keywords || [],
+            summary: conv.enrichment?.summary || null,
+          });
+        }
+      } else {
+        sources.push({
+          id: conv._id.toString(),
+          convId: conv._id.toString(),
+          title: conv.title || 'Untitled',
+          platform: conv.platform || 'unknown',
+          role: null,
+          snippet: null,
+          keywords: conv.enrichment?.keywords || [],
+          summary: conv.enrichment?.summary || null,
+        });
+      }
+    }
+
+    logger.info(`[searchByKeywords] Found ${scored.length} results for keywords: ${keywords.join(', ')}`, {
+      userQuery,
+      resultCount: scored.length,
+      keywordSource: 'user_input',
+    });
+
+    return { results: scored, context, sources, searchedAt: new Date().toISOString(), keywordSource: 'user_input', userQuery };
   }
 }
 
