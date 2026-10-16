@@ -891,7 +891,7 @@ export const ObsidianGraph = forwardRef<ObsidianGraphHandle, ObsidianGraphProps>
         <Canvas
           flat
           dpr={[1, 2]}
-          gl={{ alpha: true, antialias: true, failDetect: false }}
+          gl={{ alpha: true, antialias: true, failIfMajorPerformanceCaveat: false }}
           style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
         >
           <GraphScene

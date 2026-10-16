@@ -94,14 +94,4 @@ const conversationSchema = new mongoose.Schema(
 // IDs only need to be unique inside their source platform and per user.
 conversationSchema.index({ userId: 1, platform: 1, externalId: 1 }, { unique: true });
 
-// Drop legacy index if it exists, to avoid conflicts
-mongoose.connection.on('connected', async () => {
-  try {
-    await mongoose.connection.db.collection('conversations').dropIndex('platform_1_externalId_1');
-    console.log('[DB] Successfully dropped legacy unique index platform_1_externalId_1');
-  } catch (err) {
-    // If it doesn't exist, ignore
-  }
-});
-
 module.exports = mongoose.model('Conversation', conversationSchema);

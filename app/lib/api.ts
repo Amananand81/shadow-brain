@@ -9,29 +9,6 @@ export interface ApiMessage {
   content: string;
 }
 
-async function authRequest(path: string, body: Record<string, string>) {
-  const res = await fetch(toApiUrl(path), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.message || `Authentication failed (${res.status})`);
-  return data;
-}
-
-export function passwordAuth(email: string, password: string, mode: 'signup', name: string, confirmPassword: string): Promise<{ message: string }>;
-export function passwordAuth(email: string, password: string, mode: 'login'): Promise<{ token: string; user: { email: string; name?: string; avatar?: string } }>;
-export async function passwordAuth(email: string, password: string, mode: 'login' | 'signup', name?: string, confirmPassword?: string) {
-  if (mode === 'signup') {
-    return authRequest('/api/auth/register', { email, password, confirmPassword: confirmPassword || '', name: name || '' }) as Promise<{ message: string }>;
-  }
-  const data = await authRequest('/api/auth/login', { email, password });
-  if (!data?.token || !data?.user?.email) throw new Error('Unexpected authentication response');
-  return data as { token: string; user: { email: string; name?: string; avatar?: string } };
-}
-
 export async function getCurrentUser() {
   const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
   const headers: Record<string, string> = {};
@@ -43,25 +20,11 @@ export async function getCurrentUser() {
 }
 
 export async function logoutRequest() {
-  await fetch(toApiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' }).catch(() => undefined);
-}
-
-export async function verifyEmail(token: string) {
-  const data = await authRequest('/api/auth/verify-email', { token });
-  if (!data?.token || !data?.user?.email) throw new Error('Unexpected verification response');
-  return data as { token: string; user: { email: string; name?: string; avatar?: string } };
-}
-
-export async function resendVerification(email: string) {
-  return authRequest('/api/auth/resend-verification', { email }) as Promise<{ message: string }>;
-}
-
-export async function requestPasswordReset(email: string) {
-  return authRequest('/api/auth/forgot-password', { email }) as Promise<{ message: string }>;
-}
-
-export async function resetPassword(token: string, password: string, confirmPassword: string) {
-  return authRequest('/api/auth/reset-password', { token, password, confirmPassword }) as Promise<{ message: string }>;
+  const response = await fetch(toApiUrl('/api/auth/logout'), {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(`Application logout failed (${response.status})`);
 }
 
 export interface ApiEnrichment {
@@ -102,20 +65,21 @@ export async function sendChatMessage(
   systemPrompt?: string,
 ): Promise<{ content: string }> {
   const url = toApiUrl('/api/chat');
-  console.log('[sendChatMessage] POST', url, { messagesCount: messages.length });
+  const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
+  if (!token) throw new Error('Your session is missing. Please sign in again.');
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({ messages, systemPrompt }),
   });
-  console.log('[sendChatMessage] Response status:', res.status, res.statusText);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    console.error('[sendChatMessage] Error response:', text);
     throw new Error(`Chat error ${res.status}: ${text}`);
   }
   const data = await res.json();
-  console.log('[sendChatMessage] Parsed response:', data);
   return data;
 }
 
@@ -157,7 +121,7 @@ export async function searchMemory(query: string, platforms?: string[]): Promise
   const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
   if (!token) {
     return {
-      answer: 'Memory search needs a signed-in backend session. Please sign in with Google, then try again.',
+      answer: 'Memory search needs a signed-in backend session. Please sign in, then try again.',
       sources: [],
     };
   }
@@ -195,7 +159,7 @@ export async function searchMemory(query: string, platforms?: string[]): Promise
   }
 }
 
-export interface GoogleAuthUser {
+export interface AuthUser {
   token: string;
   user: {
     email: string;
@@ -204,80 +168,54 @@ export interface GoogleAuthUser {
   };
 }
 
-export async function googleLogin(credential: string): Promise<GoogleAuthUser> {
-  const res = await fetch(toApiUrl('/api/auth/google'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ credential }),
-  });
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    const msg = data?.message || `Google sign-in failed (${res.status})`;
-    throw new Error(msg);
+export class ClerkSessionExchangeError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string,
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(message);
+    this.name = 'ClerkSessionExchangeError';
   }
-
-  if (data?.user?.email && data?.token) {
-    return { token: data.token, user: data.user };
-  }
-  if (data?.email && data?.token) {
-    return { token: data.token, user: { email: data.email, name: data.name, avatar: data.avatar } };
-  }
-
-  const meRes = await fetch(toApiUrl('/api/auth/me'), { credentials: 'include' });
-  const meBody = await meRes.json().catch(() => null);
-  if (meRes.ok && meBody?.token) {
-    const email = meBody.email || data?.email || '';
-    const name = meBody.name || data?.name;
-    const avatar = meBody.avatar || data?.avatar;
-    return { token: meBody.token, user: { email, name, avatar } };
-  }
-
-  throw new Error('Unexpected Google sign-in response');
 }
 
-// Exchange a Clerk session token (short-lived) for the same Brain Shadow JWT
-// used by Google login. The backend verifies the Clerk token, upserts the
-// application user, and returns a Brain Shadow JWT that downstream
-// /api/conversations + /api/import (and the browser extension) expect.
-export async function clerkLogin(clerkToken: string): Promise<GoogleAuthUser> {
-  if (!clerkToken) throw new Error("No Clerk session available. Please try again.");
-
+export async function clerkLogin(clerkToken: string, expectedSessionId: string): Promise<AuthUser> {
+  if (!clerkToken) throw new Error('No active Clerk session.');
+  if (!expectedSessionId) throw new Error('No active Clerk session.');
   const res = await fetch(toApiUrl('/api/auth/clerk'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${clerkToken}`,
+      'X-Clerk-Session-Id': expectedSessionId,
+    },
     credentials: 'include',
-    body: JSON.stringify({ token: clerkToken }),
   });
-
   const data = await res.json().catch(() => null);
-
   if (!res.ok) {
-    const msg = data?.message || `Sign-in failed (${res.status})`;
-    throw new Error(msg);
+    const code = typeof data?.code === 'string' && /^[A-Z0-9_]+$/.test(data.code)
+      ? data.code
+      : `HTTP_${res.status}`;
+    const retryHeader = Number(res.headers.get('Retry-After'));
+    const retryBody = Number(data?.retryAfterSeconds);
+    const retryAfterSeconds = res.status === 429
+      ? Math.max(1, Math.ceil(Number.isFinite(retryHeader) && retryHeader > 0
+        ? retryHeader
+        : Number.isFinite(retryBody) && retryBody > 0
+          ? retryBody
+          : 1))
+      : undefined;
+    throw new ClerkSessionExchangeError(
+      typeof data?.message === 'string' ? data.message : `Sign-in failed (${res.status})`,
+      res.status,
+      code,
+      retryAfterSeconds,
+    );
   }
-
-  if (data?.user?.email && data?.token) {
+  if (typeof data?.user?.email === 'string' && typeof data?.token === 'string') {
     return { token: data.token, user: data.user };
   }
-  if (data?.email && data?.token) {
-    return { token: data.token, user: { email: data.email, name: data.name, avatar: data.avatar } };
-  }
-
-  // Cookie-only fallback (same as Google path).
-  const meRes = await fetch(toApiUrl('/api/auth/me'), { credentials: 'include' });
-  const meBody = await meRes.json().catch(() => null);
-  if (meRes.ok && meBody?.token) {
-    return {
-      token: meBody.token,
-      user: { email: meBody.email || data?.email || '', name: meBody.name || data?.name, avatar: meBody.avatar || data?.avatar },
-    };
-  }
-
-  const email = data?.email || data?.user?.email || '';
-  if (!email) throw new Error(`Unexpected server response: ${JSON.stringify(data)}`);
-  return { token: '', user: { email, name: data?.name || data?.user?.name, avatar: data?.avatar || data?.user?.avatar } };
+  throw new Error('Unexpected authentication response.');
 }
 
 export async function saveConversation(data: {

@@ -263,58 +263,68 @@ export function RightPanel({
                     .map((record, idx) => {
                       const isActive = record.keyword === activeKw;
                       return (
-                        <motion.button
+                        <motion.div
                           key={record.keyword}
                           initial={{ opacity: 0, x: 8 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: idx * 0.04 }}
-                          onClick={() => handleRecordClick(record)}
-                          className="w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-3 group transition-all"
+                          className="w-full rounded-xl flex items-center gap-3 group transition-all"
                           style={{
                             background: isActive ? "var(--bg-hover)" : "var(--bg-surface)",
                             border: `1px solid ${isActive ? "rgba(79,138,255,0.4)" : "var(--border-subtle)"}`,
                           }}
                         >
-                          <span
-                            className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{
-                              background: "#4f8aff",
-                              boxShadow: "0 0 5px #4f8aff88",
-                            }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[12px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                              {record.keyword}
-                            </p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <Clock size={9} style={{ color: "var(--text-muted)" }} />
-                              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                                {ordinal(record.count)} · {timeAgo(record.lastAt)}
-                              </span>
-                            </div>
-                            {record.summary && (
-                              <p className="text-[10.5px] mt-1.5 leading-snug line-clamp-3" style={{ color: "var(--text-secondary)" }}>
-                                {record.summary}
+                          <button
+                            type="button"
+                            onClick={() => handleRecordClick(record)}
+                            aria-label={`Search history: ${record.keyword}`}
+                            className="min-w-0 flex-1 text-left px-3 py-2.5 rounded-xl flex items-center gap-3 border-0 bg-transparent"
+                            style={{ color: "inherit", font: "inherit" }}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{
+                                background: "#4f8aff",
+                                boxShadow: "0 0 5px #4f8aff88",
+                              }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                                {record.keyword}
                               </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <Clock size={9} style={{ color: "var(--text-muted)" }} />
+                                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                                  {ordinal(record.count)} · {timeAgo(record.lastAt)}
+                                </span>
+                              </div>
+                              {record.summary && (
+                                <p className="text-[10.5px] mt-1.5 leading-snug line-clamp-3" style={{ color: "var(--text-secondary)" }}>
+                                  {record.summary}
+                                </p>
+                              )}
+                            </div>
+                            <ChevronRight
+                              size={13}
+                              className="flex-shrink-0"
+                              style={{ color: "var(--text-muted)" }}
+                            />
+                          </button>
+                          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity mr-2">
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onDeleteHistory?.(record.keyword);
                               }}
-                              className="p-1 rounded transition-colors hover:bg-[rgba(255,255,255,0.1)]"
+                              className="p-1 rounded transition-colors hover:bg-[rgba(255,255,255,0.1)] focus:opacity-100"
                               title="Delete search from history"
+                              aria-label={`Delete search history: ${record.keyword}`}
                             >
                               <X size={13} style={{ color: "var(--text-muted)" }} />
                             </button>
-                            <ChevronRight
-                              size={13}
-                              style={{ color: "var(--text-muted)" }}
-                            />
                           </div>
-                        </motion.button>
+                        </motion.div>
                       );
                     })}
                 </div>

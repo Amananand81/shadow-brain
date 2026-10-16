@@ -6,10 +6,17 @@ const BACKEND = process.env.BACKEND_URL || 'https://shadow-brain-u4ua.onrender.c
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const authorization = request.headers.get('authorization');
+    if (!authorization?.startsWith('Bearer ')) {
+      return Response.json({ message: 'Authentication required' }, { status: 401 });
+    }
 
     const res = await fetch(`${BACKEND}/api/chat`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authorization,
+      },
       body:    JSON.stringify(body),
     });
 

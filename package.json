@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build --experimental-app-only",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:auth": "npm test --prefix backend/backend"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.8.3",

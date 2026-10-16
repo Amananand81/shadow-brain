@@ -1,288 +1,382 @@
 process.env.JWT_SECRET = 'test-auth-secret';
-process.env.GOOGLE_CLIENT_ID = 'test-google-client';
-process.env.FRONTEND_URL = 'http://localhost:3000';
+process.env.CLERK_SECRET_KEY = 'test-clerk-secret';
+process.env.CLERK_AUTHORIZED_PARTIES = 'http://localhost:3000';
 
-const crypto = require('crypto');
+const validClerkAuthorization = `Bearer ${'valid-clerk-session-token'}`;
 const mockUsers = [];
-let mockGooglePayload = null;
+const mockClerkUsers = new Map();
+let mockVerifyError = null;
 
-jest.mock('../src/models/user.model', () => {
-  class User {
-    constructor(fields = {}) {
-      Object.assign(this, fields);
-      this._id = this._id || `user-${mockUsers.length + 1}`;
-    }
-
+function mockMakeUser(fields = {}) {
+  return {
+    ...fields,
+    _id: fields._id || `user-${mockUsers.length + 1}`,
     async save() {
       if (!mockUsers.includes(this)) mockUsers.push(this);
       return this;
-    }
+    },
+  };
+}
 
-    static async create(fields) {
-      const user = new User(fields);
-      mockUsers.push(user);
-      return user;
-    }
-
-    static findOne(filter) {
-      const match = (user) => Object.entries(filter).every(([key, expected]) => {
-        if (expected && typeof expected === 'object' && expected.$gt) {
-          return user[key] && new Date(user[key]) > expected.$gt;
-        }
-        return user[key] === expected;
+jest.mock('../src/models/user.model', () => ({
+  create: jest.fn(async (fields) => {
+    const user = mockMakeUser(fields);
+    mockUsers.push(user);
+    return user;
+  }),
+  findById: jest.fn(async (id) => mockUsers.find((user) => user._id.toString() === id.toString()) || null),
+  findOne: jest.fn((filter) => {
+    const promise = Promise.resolve(mockUsers.find((user) =>
+      Object.entries(filter).every(([key, value]) => user[key] === value),
+    ) || null);
+    const query = {
+      select: () => query,
+      then: (resolve, reject) => promise.then(resolve, reject),
+    };
+    return query;
+  }),
+  find: jest.fn((filter) => ({
+    limit: async (count) => mockUsers.filter((user) =>
+      Object.entries(filter).every(([key, value]) => user[key] === value),
+    ).slice(0, count),
+  })),
+  findOneAndUpdate: jest.fn(async (filter, update) => {
+    const user = mockUsers.find((candidate) => {
+      if (candidate._id.toString() !== filter._id.toString()) return false;
+      return filter.$or.some((condition) => {
+        if (condition.clerkUserId?.$exists === false) return !Object.hasOwn(candidate, 'clerkUserId');
+        if (condition.clerkUserId === null) return candidate.clerkUserId == null;
+        return candidate.clerkUserId === condition.clerkUserId;
       });
-      const promise = Promise.resolve(mockUsers.find(match) || null);
-      const query = {
-        select: () => query,
-        then: (resolve, reject) => promise.then(resolve, reject),
-      };
-      return query;
-    }
-
-    static findById(id) {
-      const promise = Promise.resolve(mockUsers.find((user) => user._id === id) || null);
-      const query = {
-        select: () => query,
-        then: (resolve, reject) => promise.then(resolve, reject),
-      };
-      return query;
-    }
-
-    static async findOneAndUpdate(filter, update) {
-      const user = mockUsers.find((candidate) => Object.entries(filter).every(([key, expected]) => {
-        if (expected && typeof expected === 'object' && expected.$gt) {
-          return candidate[key] && new Date(candidate[key]) > expected.$gt;
-        }
-        return candidate[key] === expected;
-      }));
-      if (!user) return null;
-      Object.assign(user, update.$set || {});
-      for (const [key, value] of Object.entries(update.$addToSet || {})) {
-        user[key] = [...new Set([...(user[key] || []), value])];
-      }
-      for (const key of Object.keys(update.$unset || {})) delete user[key];
-      return user;
-    }
-
-    static async deleteOne({ _id }) {
-      const index = mockUsers.findIndex((user) => user._id === _id);
-      if (index >= 0) mockUsers.splice(index, 1);
-    }
-  }
-  return User;
-});
-
-jest.mock('../src/services/email.service', () => ({
-  sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
-  sendWelcomeEmail: jest.fn().mockResolvedValue(undefined),
-  sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+    });
+    if (!user) return null;
+    Object.assign(user, update.$set);
+    user.authProviders = [...new Set([...(user.authProviders || []), update.$addToSet.authProviders])];
+    return user;
+  }),
 }));
 
-jest.mock('google-auth-library', () => ({
-  OAuth2Client: class {
-    async verifyIdToken() {
-      return { getPayload: () => mockGooglePayload };
-    }
-  },
+jest.mock('@clerk/backend', () => ({
+  createClerkClient: jest.fn(() => ({
+    sessions: {
+      getSession: jest.fn(async (id) => ({
+        id,
+        userId: 'clerk-user-1',
+        status: 'active',
+      })),
+    },
+    users: {
+      getUser: jest.fn(async (id) => {
+        const user = mockClerkUsers.get(id);
+        if (!user) throw new Error('Not found');
+        return user;
+      }),
+    },
+  })),
+  verifyToken: jest.fn(async (token) => {
+    if (mockVerifyError || token !== 'valid-clerk-session-token') throw mockVerifyError || new Error('Invalid token');
+    return { sub: 'clerk-user-1', sid: 'clerk-session-1' };
+  }),
+}));
+
+jest.mock('../src/utils/logger', () => ({
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
 }));
 
 const express = require('express');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const User = require('../src/models/user.model');
-const emailService = require('../src/services/email.service');
+const { verifyToken } = require('@clerk/backend');
+const logger = require('../src/utils/logger');
 const authRoutes = require('../src/routes/auth.routes');
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 app.use('/api/auth', authRoutes);
 
+function verifiedClerkUser(overrides = {}) {
+  return {
+    id: 'clerk-user-1',
+    primaryEmailAddressId: 'email-1',
+    emailAddresses: [{
+      id: 'email-1',
+      emailAddress: 'ada@example.com',
+      verification: { status: 'verified' },
+    }],
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    imageUrl: 'https://example.test/avatar.png',
+    banned: false,
+    locked: false,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
-  mockUsers.splice(0, mockUsers.length);
-  mockGooglePayload = null;
+  mockUsers.splice(0);
+  mockClerkUsers.clear();
+  mockClerkUsers.set('clerk-user-1', verifiedClerkUser());
+  mockVerifyError = null;
   jest.clearAllMocks();
 });
 
 afterAll(() => {
   delete process.env.JWT_SECRET;
-  delete process.env.GOOGLE_CLIENT_ID;
-  delete process.env.FRONTEND_URL;
+  delete process.env.CLERK_SECRET_KEY;
+  delete process.env.CLERK_AUTHORIZED_PARTIES;
 });
 
-describe('authentication lifecycle', () => {
-  test('registers an unverified password account, verifies it, then logs in with a JWT', async () => {
-    const registration = await request(app).post('/api/auth/register').send({
-      name: 'Ada Lovelace',
-      email: ' ADA@example.com ',
-      password: 'StrongPass1!',
-      confirmPassword: 'StrongPass1!',
+describe('Clerk authentication and application session', () => {
+  test('creates a new MongoDB user only after the verified Clerk session reaches the backend', async () => {
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(200);
+    expect(verifyToken).toHaveBeenCalledWith('valid-clerk-session-token', {
+      secretKey: 'test-clerk-secret',
+      authorizedParties: ['http://localhost:3000'],
     });
-
-    expect(registration.status).toBe(201);
-    expect(registration.body).toEqual({ message: expect.stringContaining('Check your email') });
-    const user = mockUsers[0];
-    expect(user.email).toBe('ada@example.com');
-    expect(user.name).toBe('Ada Lovelace');
-    expect(user.passwordHash).toMatch(/^\$2/);
-    expect(user.passwordHash).not.toBe('StrongPass1!');
-    expect(user.emailVerified).toBe(false);
-    expect(user.authProviders).toEqual(['password']);
-    expect(registration.headers['set-cookie']).toBeUndefined();
-
-    const verificationUrl = emailService.sendVerificationEmail.mock.calls[0][0].verificationUrl;
-    const verificationToken = new URL(verificationUrl).searchParams.get('token');
-    const blockedLogin = await request(app).post('/api/auth/login').send({ email: user.email, password: 'StrongPass1!' });
-    expect(blockedLogin.status).toBe(403);
-
-    const verification = await request(app).post('/api/auth/verify-email').send({ token: verificationToken });
-    expect(verification.status).toBe(200);
-    expect(verification.body.user).toEqual({ email: user.email, name: user.name });
-    expect(verification.body.token).toBeTruthy();
-    expect(verification.headers['set-cookie'][0]).toMatch(/HttpOnly/i);
-    expect(user.emailVerified).toBe(true);
-    expect(user.emailVerificationTokenHash).toBeUndefined();
-    expect(emailService.sendWelcomeEmail).toHaveBeenCalledWith(expect.objectContaining({ method: 'password' }));
-
-    const login = await request(app).post('/api/auth/login').send({ email: user.email, password: 'StrongPass1!' });
-    expect(login.status).toBe(200);
-    expect(login.body.token).toBeTruthy();
-    expect(login.body.user.email).toBe(user.email);
-    expect(JSON.stringify(login.body)).not.toContain('passwordHash');
-
-    const reusedVerification = await request(app).post('/api/auth/verify-email').send({ token: verificationToken });
-    expect(reusedVerification.status).toBe(400);
-  });
-
-  test('forgot-password is enumeration-safe and reset links are single-use', async () => {
-    const user = await User.create({
+    expect(mockUsers).toHaveLength(1);
+    expect(mockUsers[0]).toMatchObject({
+      clerkUserId: 'clerk-user-1',
       email: 'ada@example.com',
-      name: 'Ada',
-      passwordHash: '$2a$10$existing-hash',
       emailVerified: true,
-      authProviders: ['password'],
+      authProviders: ['clerk'],
     });
-
-    const unknown = await request(app).post('/api/auth/forgot-password').send({ email: 'nobody@example.com' });
-    const known = await request(app).post('/api/auth/forgot-password').send({ email: user.email });
-    expect(unknown.status).toBe(200);
-    expect(unknown.body).toEqual(known.body);
-
-    const resetUrl = emailService.sendPasswordResetEmail.mock.calls[0][0].resetUrl;
-    const token = new URL(resetUrl).searchParams.get('token');
-    expect(user.passwordResetTokenHash).not.toBe(token);
-
-    const reset = await request(app).post('/api/auth/reset-password').send({
-      token,
-      password: 'NewStrong2!',
-      confirmPassword: 'NewStrong2!',
-    });
-    expect(reset.status).toBe(200);
-    expect(user.passwordHash).toMatch(/^\$2/);
-    expect(user.passwordResetTokenHash).toBeUndefined();
-
-    const replay = await request(app).post('/api/auth/reset-password').send({
-      token,
-      password: 'AnotherStrong3!',
-      confirmPassword: 'AnotherStrong3!',
-    });
-    expect(replay.status).toBe(400);
+    expect(response.body.token).toBeTruthy();
+    expect(response.body.user.email).toBe('ada@example.com');
+    expect(response.headers['set-cookie'][0]).toMatch(/HttpOnly/i);
   });
 
-  test('does not link an unverified password account to a Google identity', async () => {
-    const user = await User.create({
+  test('links an existing verified Clerk email without changing the MongoDB user ID or conversation owner', async () => {
+    const existing = mockMakeUser({
+      _id: 'original-mongo-id',
       email: 'ada@example.com',
-      passwordHash: '$2a$10$existing-hash',
-      emailVerified: false,
       authProviders: ['password'],
+      emailVerified: false,
+      profileData: { preserved: true },
     });
-    mockGooglePayload = { sub: 'google-sub', email: user.email, email_verified: true, name: 'Ada' };
+    mockUsers.push(existing);
+    const conversation = { _id: 'conversation-1', userId: 'original-mongo-id' };
 
-    const response = await request(app).post('/api/auth/google').send({ credential: 'verified-google-credential' });
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(200);
+    expect(mockUsers).toHaveLength(1);
+    expect(mockUsers[0]._id).toBe('original-mongo-id');
+    expect(mockUsers[0].profileData).toEqual({ preserved: true });
+    expect(mockUsers[0].authProviders).toEqual(['password', 'clerk']);
+    expect(conversation.userId).toBe('original-mongo-id');
+  });
+
+  test('links a verified Clerk identity to a unique Google user without changing its ID or conversation ownership', async () => {
+    const existing = mockMakeUser({
+      _id: 'google-user-id',
+      googleId: 'google-user-1',
+      email: 'ada@example.com',
+      authProviders: ['google'],
+      emailVerified: true,
+      profileData: { preserved: true },
+    });
+    mockUsers.push(existing);
+    const conversation = { _id: 'google-conversation', userId: 'google-user-id' };
+
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(200);
+    expect(mockUsers).toHaveLength(1);
+    expect(mockUsers[0]).toMatchObject({
+      _id: 'google-user-id',
+      googleId: 'google-user-1',
+      clerkUserId: 'clerk-user-1',
+      authProviders: ['google', 'clerk'],
+      profileData: { preserved: true },
+    });
+    expect(conversation.userId).toBe('google-user-id');
+  });
+
+  test('rejects invalid or expired Clerk tokens without creating users', async () => {
+    mockVerifyError = new Error('invalid token');
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer expired-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(401);
+    expect(mockUsers).toHaveLength(0);
+    expect(response.body.message).toMatch(/Invalid or expired/);
+  });
+
+  test('rejects a client session identifier that does not match the signed token', async () => {
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'different-session');
+
+    expect(response.status).toBe(401);
+    expect(mockUsers).toHaveLength(0);
+  });
+
+  test('rejects a revoked Clerk session after token verification', async () => {
+    const { createClerkClient } = require('@clerk/backend');
+    createClerkClient.mockReturnValueOnce({
+      sessions: {
+        getSession: jest.fn(async (id) => ({
+          id,
+          userId: 'clerk-user-1',
+          status: 'revoked',
+        })),
+      },
+      users: { getUser: jest.fn() },
+    });
+
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(401);
+    expect(mockUsers).toHaveLength(0);
+  });
+
+  test('rejects a Clerk identity whose primary email is not verified', async () => {
+    mockClerkUsers.set('clerk-user-1', verifiedClerkUser({
+      emailAddresses: [{
+        id: 'email-1',
+        emailAddress: 'ada@example.com',
+        verification: { status: 'unverified' },
+      }],
+    }));
+
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(403);
+    expect(mockUsers).toHaveLength(0);
+  });
+
+  test('rejects ambiguous duplicate email records instead of linking either account', async () => {
+    mockUsers.push(
+      mockMakeUser({ _id: 'mongo-id-1', email: 'ada@example.com' }),
+      mockMakeUser({ _id: 'mongo-id-2', email: 'ada@example.com' }),
+    );
+
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
     expect(response.status).toBe(409);
-    expect(user.googleId).toBeUndefined();
-    expect(emailService.sendWelcomeEmail).not.toHaveBeenCalled();
+    expect(response.body.code).toBe('AMBIGUOUS_EMAIL_MATCHES');
+    expect(mockUsers.map((user) => user.clerkUserId)).toEqual([undefined, undefined]);
+    expect(logger.warn).toHaveBeenCalledWith('[Auth] Clerk account resolution conflict', {
+      reasonCode: 'AMBIGUOUS_EMAIL_MATCHES',
+      emailMatchCount: 2,
+    });
   });
 
-  test('links a verified Google identity to the existing verified email account', async () => {
-    const user = await User.create({
+  test('rejects a conflicting Clerk identity already attached to a different MongoDB user', async () => {
+    mockUsers.push(
+      mockMakeUser({ _id: 'mongo-id-1', clerkUserId: 'clerk-user-1', email: 'old@example.com' }),
+      mockMakeUser({ _id: 'mongo-id-2', email: 'ada@example.com' }),
+    );
+
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('CLERK_IDENTITY_EMAIL_CONFLICT');
+    expect(mockUsers[1].clerkUserId).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith('[Auth] Clerk account resolution conflict', {
+      reasonCode: 'CLERK_IDENTITY_EMAIL_CONFLICT',
+      emailMatchCount: 1,
+    });
+  });
+
+  test('reports a duplicate email key conflict without exposing the stored email', async () => {
+    User.create.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), {
+      code: 11000,
+      keyPattern: { email: 1 },
+    }));
+
+    const response = await request(app)
+      .post('/api/auth/clerk')
+      .set('Authorization', validClerkAuthorization)
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('EMAIL_ALREADY_CLAIMED');
+    expect(JSON.stringify(response.body)).not.toContain('ada@example.com');
+    expect(logger.warn).toHaveBeenCalledWith('[Auth] Clerk account resolution conflict', {
+      reasonCode: 'EMAIL_ALREADY_CLAIMED',
+      emailMatchCount: undefined,
+    });
+  });
+
+  test('reuses the same identity mapping on repeated successful exchanges', async () => {
+    const existing = mockMakeUser({
+      _id: 'stable-id',
+      clerkUserId: 'clerk-user-1',
       email: 'ada@example.com',
-      emailVerified: true,
-      passwordHash: '$2a$10$existing-hash',
-      authProviders: ['password'],
+      authProviders: ['clerk'],
     });
-    mockGooglePayload = { sub: 'google-sub', email: user.email, email_verified: true, name: 'Ada Lovelace' };
+    mockUsers.push(existing);
 
-    const response = await request(app).post('/api/auth/google').send({ credential: 'verified-google-credential' });
-    expect(response.status).toBe(200);
+    const first = await request(app).post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+    const second = await request(app).post('/api/auth/clerk')
+      .set('Authorization', 'Bearer valid-clerk-session-token')
+      .set('X-Clerk-Session-Id', 'clerk-session-1');
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
     expect(mockUsers).toHaveLength(1);
-    expect(user.googleId).toBe('google-sub');
-    expect(user.authProviders).toEqual(['password', 'google']);
-    expect(response.body.user.email).toBe(user.email);
-    expect(emailService.sendWelcomeEmail).not.toHaveBeenCalled();
+    expect(mockUsers[0]._id).toBe('stable-id');
   });
 
-  test('creates a verified Google account and sends its welcome email once', async () => {
-    mockGooglePayload = {
-      sub: 'new-google-sub',
-      email: 'new@example.com',
-      email_verified: true,
-      name: 'New User',
-      picture: 'https://example.test/avatar.png',
-    };
+  test('restores a valid Brain Shadow application session and clears it on logout', async () => {
+    const user = mockMakeUser({ _id: 'session-user', email: 'ada@example.com', name: 'Ada' });
+    mockUsers.push(user);
+    const appToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
 
-    const response = await request(app).post('/api/auth/google').send({ credential: 'verified-google-credential' });
-    expect(response.status).toBe(200);
-    expect(mockUsers).toHaveLength(1);
-    expect(mockUsers[0].emailVerified).toBe(true);
-    expect(mockUsers[0].authProviders).toEqual(['google']);
-    expect(mockUsers[0].avatar).toBe(mockGooglePayload.picture);
-    expect(emailService.sendWelcomeEmail).toHaveBeenCalledWith(expect.objectContaining({ method: 'google' }));
+    const restored = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${appToken}`);
+    expect(restored.status).toBe(200);
+    expect(restored.body.email).toBe(user.email);
+
+    const invalid = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer invalid');
+    expect(invalid.status).toBe(401);
+
+    const logout = await request(app).post('/api/auth/logout');
+    expect(logout.status).toBe(200);
+    expect(logout.headers['set-cookie'][0]).toMatch(/shadowbrain_token=;/);
   });
 
-  test('allows an authenticated Google user to link password sign-in', async () => {
-    mockGooglePayload = { sub: 'google-sub', email: 'linked@example.com', email_verified: true, name: 'Linked User' };
-    const googleLogin = await request(app).post('/api/auth/google').send({ credential: 'verified-google-credential' });
-    expect(googleLogin.status).toBe(200);
-
-    const linked = await request(app)
-      .post('/api/auth/link-password')
-      .set('Authorization', `Bearer ${googleLogin.body.token}`)
-      .send({ password: 'LinkedPass1!', confirmPassword: 'LinkedPass1!' });
-    expect(linked.status).toBe(200);
-    expect(mockUsers[0].authProviders).toEqual(['google', 'password']);
-    expect(mockUsers[0].passwordHash).toMatch(/^\$2/);
-
-    const passwordLogin = await request(app).post('/api/auth/login').send({ email: mockUsers[0].email, password: 'LinkedPass1!' });
-    expect(passwordLogin.status).toBe(200);
-  });
-
-  test('upgrades a legacy scrypt password hash after a successful verified login', async () => {
-    const password = 'LegacyPass1!';
-    const salt = 'legacy-salt';
-    const legacyHash = crypto.scryptSync(password, salt, 64).toString('hex');
-    const user = await User.create({
-      email: 'legacy@example.com',
-      emailVerified: true,
-      passwordHash: `${salt}:${legacyHash}`,
-      authProviders: [],
-    });
-
-    const response = await request(app).post('/api/auth/login').send({ email: user.email, password });
-    expect(response.status).toBe(200);
-    expect(user.passwordHash).toMatch(/^\$2/);
-    expect(user.authProviders).toContain('password');
-  });
-
-  test('resends verification for legacy password users without provider metadata', async () => {
-    await User.create({
-      email: 'legacy-unverified@example.com',
-      passwordHash: 'legacy-salt:legacy-hash',
-      emailVerified: false,
-      authProviders: [],
-    });
-
-    const response = await request(app).post('/api/auth/resend-verification').send({ email: 'legacy-unverified@example.com' });
-    expect(response.status).toBe(200);
-    expect(emailService.sendVerificationEmail).toHaveBeenCalledTimes(1);
-    expect(mockUsers[0].authProviders).toContain('password');
+  test('does not expose the removed password or Google authentication endpoints', async () => {
+    for (const path of ['/login', '/register', '/google', '/forgot-password', '/reset-password']) {
+      const response = await request(app).post(`/api/auth${path}`).send({});
+      expect(response.status).toBe(404);
+    }
   });
 });

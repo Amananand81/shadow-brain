@@ -1,0 +1,52 @@
+  console.error
+    [Auth] ΓÜá∩╕Å  CLERK_SECRET_KEY is not set ΓÇö Clerk sign-in will be unavailable
+
+    [0m [90m 29 |[39m
+     [90m 30 |[39m [36mif[39m ([33m![39m[33mCLERK_SECRET_KEY[39m) {
+    [31m[1m>[22m[39m[90m 31 |[39m   console[33m.[39merror(
+     [90m    |[39m           [31m[1m^[22m[39m
+     [90m 32 |[39m     [32m'[Auth] ΓÜá∩╕Å  CLERK_SECRET_KEY is not set ΓÇö Clerk sign-in will be unavailable'[39m
+     [90m 33 |[39m   )[33m;[39m
+     [90m 34 |[39m }[0m
+
+      at Object.error (src/controllers/auth.controller.js:31:11)
+      at Object.require (src/routes/auth.routes.js:4:24)
+      at require (test/auth.integration.test.js:354:27)
+      at Object.isolateModules (test/auth.integration.test.js:327:16)
+
+[31merror[39m: [Auth] Clerk token verification failed: Token verification failed {"timestamp":"2026-10-14T20:47:21.456Z"}
+FAIL test/auth.integration.test.js (6.168 s)
+  authentication lifecycle
+    ΓêÜ registers an unverified password account, verifies it, then logs in with a JWT (1421 ms)
+    ΓêÜ forgot-password is enumeration-safe and reset links are single-use (782 ms)
+    ΓêÜ does not link an unverified password account to a Google identity (10 ms)
+    ΓêÜ links a verified Google identity to the existing verified email account (9 ms)
+    ΓêÜ creates a verified Google account and sends its welcome email once (7 ms)
+    ΓêÜ allows an authenticated Google user to link password sign-in (717 ms)
+    ΓêÜ upgrades a legacy scrypt password hash after a successful verified login (481 ms)
+    ΓêÜ resends verification for legacy password users without provider metadata (6 ms)
+  Clerk authentication (/api/auth/clerk)
+    ├ù returns 503 when CLERK_SECRET_KEY is unset (174 ms)
+    ΓêÜ returns 401 when verifyToken throws (invalid or expired token) (18 ms)
+    ΓêÜ returns 200 and upserts a new user for a valid mocked Clerk token (7 ms)
+    ΓêÜ returns 200 and returns existing user when email already exists (9 ms)
+
+  ΓùÅ Clerk authentication (/api/auth/clerk) ΓÇ║ returns 503 when CLERK_SECRET_KEY is unset
+
+    TypeError: Cannot read properties of undefined (reading 'status')
+
+      364 |     process.env.CLERK_SECRET_KEY = savedKey;
+      365 |
+    > 366 |     expect(response.status).toBe(503);
+          |                     ^
+      367 |     expect(response.body.message).toMatch(/not configured/i);
+      368 |   });
+      369 |
+
+      at Object.status (test/auth.integration.test.js:366:21)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 11 passed, 12 total
+Snapshots:   0 total
+Time:        6.751 s, estimated 27 s
+Ran all test suites matching test/auth.integration.test.js.

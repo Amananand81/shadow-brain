@@ -14,12 +14,6 @@ const userSchema = new mongoose.Schema(
       sparse: true,
       index: true,
     },
-    authMethod: {
-      type: String,
-      enum: ['google', 'clerk'],
-      default: 'google',
-      index: true,
-    },
     email: {
       type: String,
       required: true,
@@ -40,7 +34,6 @@ const userSchema = new mongoose.Schema(
     },
     authProviders: {
       type: [String],
-      enum: ['google', 'password'],
       default: [],
     },
     emailVerified: {

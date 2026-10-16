@@ -111,9 +111,9 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/conversations', conversationRoutes);  // authenticated CRUD
 app.use('/api/import',        importRoutes);         // extension ingest — no auth
-app.use('/api/chat',          chatRoutes);           // frontend chat — no auth
+app.use('/api/chat',          chatRoutes);           // authenticated chat and user-scoped retrieval
 app.use('/api/health',        healthRoutes);
-app.use('/api/auth',          authRoutes);           // Google sign-in
+app.use('/api/auth',          authRoutes);           // Clerk authentication and app-session endpoints
 
 // Top-level health check
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

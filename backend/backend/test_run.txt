@@ -1,0 +1,23 @@
+FAIL test/auth.integration.test.js
+  ΓùÅ Test suite failed to run
+
+    Cannot find module 'type-detect'
+    Require stack:
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\@sinonjs\commons\lib\type-of.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\@sinonjs\commons\lib\index.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\@sinonjs\fake-timers\src\fake-timers-src.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\@jest\fake-timers\build\index.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\jest-environment-node\build\index.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\jest-util\build\index.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\@jest\core\build\index.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\jest-cli\build\index.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\jest-cli\bin\jest.js
+    - C:\Users\amana\OneDrive\Desktop\brain-shadow\brain-shadow\backend\backend\node_modules\jest\bin\jest.js
+
+      at Object.<anonymous> (node_modules/@sinonjs/commons/lib/type-of.js:3:12)
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        0.457 s
+Ran all test suites matching test/auth.integration.test.js.

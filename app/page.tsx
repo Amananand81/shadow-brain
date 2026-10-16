@@ -1,12 +1,13 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { startTransition, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel, SearchRecord } from "./components/RightPanel";
 import { GraphCenter } from "./components/GraphCenter";
 import { ChatArea } from "./components/ChatArea";
-import { AuthScreen } from "./components/AuthScreen";
 import { AgentSelectScreen } from "./components/AgentSelectScreen";
 import { ExtensionInstallModal } from "./components/ExtensionInstallModal";
 import { ChatSession, Message } from "./types";
@@ -25,13 +26,14 @@ import {
   sendChatMessage,
   fetchConversations,
   saveConversation,
-  getCurrentUser,
+  clerkLogin,
+  ClerkSessionExchangeError,
   logoutRequest,
   ApiConversation,
   MemorySource,
 } from "./lib/api";
 
-type Stage = "loading" | "auth" | "select-agents" | "app";
+type Stage = "loading" | "auth" | "session-error" | "select-agents" | "app";
 type CenterView = "graph" | "chat";
 
 interface AuthState {
@@ -64,6 +66,8 @@ function apiConvToSession(conv: ApiConversation): ChatSession {
 }
 
 export default function Home() {
+  const { getToken, isLoaded, isSignedIn, sessionId, signOut } = useAuth();
+  const router = useRouter();
   const [auth, setAuth] = useState<AuthState>({
     stage: "loading",
     userEmail: null,
@@ -86,35 +90,109 @@ export default function Home() {
   const [resultsPanelContent, setResultsPanelContent] = useState<ReactNode>(null);
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0);
 
   // Track which session IDs have already been saved to backend
   const persistedIds = useRef<Set<string>>(new Set());
+  const sessionExchanges = useRef(new Map<string, Promise<Awaited<ReturnType<typeof clerkLogin>>>>());
+  const automaticExchangeAttempts = useRef(new Set<string>());
+  const activeClerkSession = useRef<string | null>(null);
+
+  const activateApplicationSession = useCallback(async (clerkToken: string, clerkSessionId: string) => {
+    if (activeClerkSession.current === clerkSessionId) return;
+    let exchange = sessionExchanges.current.get(clerkSessionId);
+    if (!exchange) {
+      exchange = clerkLogin(clerkToken, clerkSessionId);
+      sessionExchanges.current.set(clerkSessionId, exchange);
+    }
+    try {
+      const result = await exchange;
+      setSession(result.user.email, result.token);
+      setToken(result.token);
+      activeClerkSession.current = clerkSessionId;
+      setAuth({
+        stage: "app",
+        userEmail: result.user.email,
+        selectedAgents: getSelectedAgents(),
+      });
+      setSessionError(null);
+      if (typeof window !== "undefined") {
+        window.postMessage({ type: "SHADOWBRAIN_LOGIN", token: result.token }, window.location.origin);
+      }
+      if (!hasSeenExtensionPrompt(result.user.email)) {
+        markExtensionPromptSeen(result.user.email);
+        setShowExtensionPrompt(true);
+      }
+    } finally {
+      sessionExchanges.current.delete(clerkSessionId);
+    }
+  }, []);
+
+  const handleSessionExchangeError = useCallback((error: unknown, allowRateLimitRetry: boolean) => {
+    if (error instanceof ClerkSessionExchangeError) {
+      console.warn("[auth] Clerk application session exchange failed", {
+        status: error.status,
+        code: error.code,
+        retryAfterSeconds: error.retryAfterSeconds,
+      });
+    } else {
+      console.warn("[auth] Clerk application session exchange failed", {
+        code: "SESSION_EXCHANGE_FAILED",
+      });
+    }
+    const cooldown = allowRateLimitRetry &&
+      error instanceof ClerkSessionExchangeError &&
+      error.status === 429
+      ? error.retryAfterSeconds ?? 1
+      : 0;
+    setRetryAfterSeconds(cooldown);
+    setSessionError(cooldown > 0
+      ? "Brain Shadow is temporarily limiting sign-in attempts."
+      : "Your Clerk sign-in succeeded, but Brain Shadow could not establish its application session.");
+    setAuth({ stage: "session-error", userEmail: null, selectedAgents: [] });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     clearLegacyCredentials();
-    getCurrentUser().then((user) => {
-      if (cancelled) return;
-      if (!user) {
+    if (!isLoaded) return () => { cancelled = true; };
+    if (!isSignedIn || !sessionId) {
+      activeClerkSession.current = null;
+      queueMicrotask(() => {
+        if (cancelled) return;
         clearSession();
+        setToken(null);
         setAuth({ stage: "auth", userEmail: null, selectedAgents: [] });
-        return;
-      }
-      setSession(user.email, user.token);
-      setToken(user.token);
-      const agents = getSelectedAgents();
-      setAuth({
-        stage: agents.length === 0 ? "select-agents" : "app",
-        userEmail: user.email,
-        selectedAgents: agents,
       });
-    }).catch(() => {
+      return () => { cancelled = true; };
+    }
+
+    getToken().then((clerkToken) => {
+      if (!clerkToken) throw new Error("No active Clerk session token");
+      if (cancelled || automaticExchangeAttempts.current.has(sessionId)) return;
+      automaticExchangeAttempts.current.add(sessionId);
+      return activateApplicationSession(clerkToken, sessionId);
+    }).catch((error: unknown) => {
       if (cancelled) return;
       clearSession();
-      setAuth({ stage: "auth", userEmail: null, selectedAgents: [] });
+      setToken(null);
+      handleSessionExchangeError(error, true);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [activateApplicationSession, getToken, handleSessionExchangeError, isLoaded, isSignedIn, sessionId]);
+
+  useEffect(() => {
+    if (retryAfterSeconds <= 0) return;
+    const timeout = window.setTimeout(() => {
+      setRetryAfterSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => window.clearTimeout(timeout);
+  }, [retryAfterSeconds]);
+
+  useEffect(() => {
+    if (stage === "auth") router.replace("/sign-in");
+  }, [router, stage]);
 
   // Load backend conversations once the user is in the app
   useEffect(() => {
@@ -133,28 +211,6 @@ export default function Home() {
     }).finally(() => setSessionsLoading(false));
   }, [stage]);
 
-  const handleAuthenticated = useCallback((email: string) => {
-    const agents = getSelectedAgents();
-    setAuth({
-      stage: agents.length === 0 ? "select-agents" : "app",
-      userEmail: email,
-      selectedAgents: agents,
-    });
-
-    if (typeof window !== "undefined") {
-      const storedToken = window.localStorage.getItem("shadowbrain_token");
-      setToken(storedToken);
-      if (storedToken) {
-        window.postMessage({ type: "SHADOWBRAIN_LOGIN", token: storedToken }, "*");
-      }
-    }
-
-    if (!hasSeenExtensionPrompt(email)) {
-      markExtensionPromptSeen(email);
-      setShowExtensionPrompt(true);
-    }
-  }, []);
-
   // Keep the universal extension paired even when the page or extension is
   // reloaded after the user has already signed in.
   useEffect(() => {
@@ -168,15 +224,46 @@ export default function Home() {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    await logoutRequest();
+    try {
+      await logoutRequest();
+    } catch (error) {
+      console.error("[auth] Brain Shadow server-session cleanup failed.", {
+        reason: error instanceof Error
+          ? (/^Application logout failed \(\d+\)$/.test(error.message) ? error.message : error.name)
+          : "UnknownError",
+      });
+    }
+
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("[auth] Clerk sign-out failed.", {
+        reason: error instanceof Error ? error.name : "UnknownError",
+      });
+      return;
+    }
+
+    activeClerkSession.current = null;
     clearSession();
     clearSelectedAgents();
     setToken(null);
     setAuth({ stage: "auth", userEmail: null, selectedAgents: [] });
     if (typeof window !== "undefined") {
-      window.postMessage({ type: "SHADOWBRAIN_LOGOUT" }, "*");
+      window.postMessage({ type: "SHADOWBRAIN_LOGOUT" }, window.location.origin);
     }
-  }, []);
+  }, [signOut]);
+
+  const retryApplicationSession = useCallback(async () => {
+    if (!sessionId || retryAfterSeconds > 0 || sessionExchanges.current.has(sessionId)) return;
+    setAuth((prev) => ({ ...prev, stage: "loading" }));
+    try {
+      const clerkToken = await getToken();
+      if (!clerkToken) throw new Error("No active Clerk session token");
+      await activateApplicationSession(clerkToken, sessionId);
+    } catch (error: unknown) {
+      handleSessionExchangeError(error, true);
+    }
+  }, [activateApplicationSession, getToken, handleSessionExchangeError, retryAfterSeconds, sessionId]);
 
   const handleNewChat = useCallback(() => {
     const newSession: ChatSession = {
@@ -376,7 +463,24 @@ export default function Home() {
   if (stage === "loading") {
     content = <div className="min-h-screen w-full" style={{ background: "var(--bg-deep)" }} />;
   } else if (stage === "auth") {
-    content = <AuthScreen onAuthenticated={handleAuthenticated} />;
+    content = <div className="min-h-screen w-full" style={{ background: "var(--bg-deep)" }} />;
+  } else if (stage === "session-error") {
+    content = (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center" style={{ background: "var(--bg-deep)", color: "var(--text-primary)" }}>
+        <h1 className="text-lg font-semibold">Could not open Brain Shadow</h1>
+        <p className="max-w-md text-sm" style={{ color: "var(--text-secondary)" }}>
+          {sessionError}{retryAfterSeconds > 0 ? ` Try again in ${retryAfterSeconds} seconds.` : ""}
+        </p>
+        <div className="flex gap-3">
+          <button type="button" onClick={retryApplicationSession} disabled={retryAfterSeconds > 0} className="rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50" style={{ background: "var(--blue)", color: "white" }}>
+            {retryAfterSeconds > 0 ? `Retry (${retryAfterSeconds}s)` : "Retry"}
+          </button>
+          <button type="button" onClick={handleLogout} className="rounded-lg px-4 py-2 text-sm" style={{ border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
+            Sign out
+          </button>
+        </div>
+      </main>
+    );
   } else if (stage === "select-agents") {
     content = <AgentSelectScreen initialSelected={selectedAgents} onContinue={handleAgentsSelected} />;
   } else {

@@ -27,6 +27,7 @@ const scheduleLocalMongoRetry = (mongoUri) => {
 
     try {
       await mongoose.connect(mongoUri, {
+        autoIndex: false,
         serverSelectionTimeoutMS: 3000,
         socketTimeoutMS: 60000,
         heartbeatFrequencyMS: 10000,
@@ -88,6 +89,7 @@ const connectDB = async () => {
     }
 
     const conn = await mongoose.connect(mongoUri, {
+      autoIndex: false,
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 60000,
       heartbeatFrequencyMS: 10000,
@@ -135,7 +137,8 @@ const connectDB = async () => {
       console.error(`[DB DEBUG] Full error: ${writeErr.stack}`);
     }
 
-    // ── Migration: Fix legacy externalId-only unique index ─────────
+    // Inspect legacy indexes only; index/data migrations require a separate
+    // preflight and backup, so application startup must not change user data.
     const collectionExists = collections.some(c => c.name === 'conversations');
     if (collectionExists) {
       const conversations = conn.connection.collection('conversations');
@@ -146,52 +149,29 @@ const connectDB = async () => {
         index.key.externalId === 1
       );
       if (legacyIndex) {
-        await conversations.dropIndex(legacyIndex.name);
-        logger.info('Removed legacy externalId-only unique index');
+        logger.warn(
+          `Legacy unique index "${legacyIndex.name}" remains on conversations.externalId; review it with a backed-up, non-destructive migration`
+        );
       }
-
-      // Deduplicate: keep only the oldest doc per platform+externalId
-      const dups = await conversations.aggregate([
-        { $group: { _id: { platform: '$platform', externalId: '$externalId' }, ids: { $push: '$_id' }, count: { $sum: 1 } } },
-        { $match: { count: { $gt: 1 } } },
-      ]).toArray();
-      for (const g of dups) {
-        await conversations.deleteMany({ _id: { $in: g.ids.slice(1) } });
-      }
-      if (dups.length) console.log(`[DB DEBUG] Removed ${dups.length} duplicate groups`);
-
-      await conversations.createIndex(
-        { platform: 1, externalId: 1 },
-        { unique: true, name: 'platform_1_externalId_1' }
-      );
-      console.log(`[DB DEBUG] Index migration completed`);
     } else {
       console.log(`[DB DEBUG] No conversations collection yet — will be created on first insert`);
     }
 
-    // ── Migration: Fix users index so Clerk-only accounts (no googleId)
-    //    and Google-linked accounts can coexist. The googleId unique index
-    //    created before sparse existed is NOT sparse, which makes the second
-    //    Clerk account (googleId missing) collide with E11000 duplicate null.
-    //    Rebuild it as sparse to match the schema.
+    // Inspect identity indexes without modifying the database.
     const userCollectionExists = collections.some(c => c.name === 'users');
     if (userCollectionExists) {
       const users = conn.connection.collection('users');
       const userIndexes = await users.indexes();
-      const googleIdx = userIndexes.find(idx => idx.unique && idx.key.googleId === 1);
-      if (googleIdx && !googleIdx.sparse) {
-        await users.dropIndex(googleIdx.name);
-        console.log(`[DB DEBUG] Dropped non-sparse unique index "${googleIdx.name}" on users.googleId`);
+      for (const field of ['googleId', 'clerkUserId']) {
+        const identityIndex = userIndexes.find(
+          (index) => index.unique && index.key[field] === 1
+        );
+        if (identityIndex && !identityIndex.sparse) {
+          logger.warn(
+            `Legacy unique index "${identityIndex.name}" on users.${field} is not sparse; review it with a backed-up, non-destructive migration`
+          );
+        }
       }
-      const clerkIdx = userIndexes.find(idx => idx.unique && idx.key.clerkUserId === 1);
-      if (clerkIdx && !clerkIdx.sparse) {
-        await users.dropIndex(clerkIdx.name);
-        console.log(`[DB DEBUG] Dropped non-sparse unique index "${clerkIdx.name}" on users.clerkUserId`);
-      }
-      // Recreate both as sparse-unique (standard names so Mongoose ensureIndexes is a no-op)
-      await users.createIndex({ googleId: 1 }, { unique: true, sparse: true, name: 'googleId_1' });
-      await users.createIndex({ clerkUserId: 1 }, { unique: true, sparse: true, name: 'clerkUserId_1' });
-      console.log(`[DB DEBUG] Users index migration completed`);
     }
 
     logger.info(`MongoDB Connected: ${actualHost} | Database: "${actualDb}"`);
