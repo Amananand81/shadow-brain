@@ -13,17 +13,28 @@ const cerebrasClient = process.env.CEREBRAS_API_KEY
     })
   : null;
 
-// qwen-3-32b was deprecated/removed from Cerebras (every request 404'd —
-// confirmed via /v1/models, it's no longer in their catalog). Their other
-// two current models (gpt-oss-120b, zai-glm-4.7) are reasoning models that
-// spend the token budget on hidden "thinking" before any visible content,
-// which would starve this call's max_tokens: 450 and come back empty.
-// gemma-4-31b answers directly with no reasoning overhead — verified
-// against the actual JSON-extraction prompt this function sends.
-const CEREBRAS_MODEL = 'gemma-4-31b';
+// Confirmed available in Cerebras' current /v1/models response.
+const CEREBRAS_MODEL = 'qwen-3.8-27b';
 
 function isRateLimit(msg = '') {
   return msg.includes('429') || msg.toLowerCase().includes('rate limit');
+}
+
+function safeProviderError(error) {
+  const rawStatus = error?.status ?? error?.response?.status;
+  const status = Number.isInteger(rawStatus) ? rawStatus : undefined;
+  const rawCode = typeof (error?.code ?? error?.error?.code) === 'string'
+    ? (error.code ?? error.error.code)
+    : '';
+  const code = /^[a-zA-Z0-9_.-]{1,48}$/.test(rawCode) ? rawCode : undefined;
+  const message = String(error?.message || 'Provider request failed')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+    .replace(/\b(?:gsk_|csk-|sk-)[A-Za-z0-9_-]+\b/gi, '[REDACTED]')
+    .replace(/\b(api[_-]?key|authorization)\s*[:=]\s*\S+/gi, '$1=[REDACTED]')
+    .replace(/https?:\/\/\S+/gi, '[URL]')
+    .replace(/\s+/g, ' ')
+    .slice(0, 200);
+  return { status, code, message };
 }
 
 // ── Metadata extraction prompt (shared) ───────────────────
@@ -139,7 +150,10 @@ async function extractMetadata(cleanedText, conversation) {
         content = await extractWithCerebras(cleanedText);
       }
       const rawMetadata = parseJsonResponse(content);
-      validateMetadata(rawMetadata);
+      const validation = validateMetadata(rawMetadata);
+      if (!validation.valid) {
+        throw new Error(`Invalid metadata: ${validation.errors.join('; ')}`);
+      }
       logger.info(`[ENRICHMENT] ${provider} succeeded`);
       return { ...buildEnrichment(rawMetadata), enrichment_version: `1.0.0-${provider}`, message_count: conversation.messages.length };
     } catch (err) {
@@ -147,7 +161,11 @@ async function extractMetadata(cleanedText, conversation) {
         logger.warn(`[RATE LIMIT] ${provider} quota hit — switching to other provider`);
         continue;
       }
-      logger.warn(`[${provider.toUpperCase()} FAIL] ${err.message}`);
+      const details = safeProviderError(err);
+      logger.warn(
+        `[${provider.toUpperCase()} FAIL] status=${details.status ?? 'n/a'} `
+        + `code=${details.code || 'n/a'} message=${details.message}`,
+      );
     }
   }
 

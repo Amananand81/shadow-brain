@@ -4,72 +4,47 @@ const VALID_CATEGORIES = [
   'Implementation', 'Review', 'Other',
 ];
 
-// Fill in sensible defaults for any missing/invalid fields
-// so enrichment never fails due to incomplete AI response
 function validateMetadata(metadata) {
-  if (!metadata || typeof metadata !== 'object') {
-    return { valid: false, errors: ['Not an object'] };
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { valid: false, errors: ['Metadata must be an object'] };
   }
 
-  if (!metadata.topic || typeof metadata.topic !== 'string') {
-    metadata.topic = 'General Conversation';
+  const errors = [];
+  if (typeof metadata.topic !== 'string' || !metadata.topic.trim()) {
+    errors.push('topic must be a non-empty string');
+  }
+  if (typeof metadata.category !== 'string' || !VALID_CATEGORIES.includes(metadata.category)) {
+    errors.push('category must be a supported category');
+  }
+  if (typeof metadata.summary !== 'string' || metadata.summary.trim().length < 5) {
+    errors.push('summary must be a string of at least 5 characters');
+  }
+  if (!Array.isArray(metadata.keywords) || metadata.keywords.length === 0
+    || metadata.keywords.some(keyword => typeof keyword !== 'string' || !keyword.trim())) {
+    errors.push('keywords must be a non-empty array of non-empty strings');
+  }
+  if (!Array.isArray(metadata.entities)
+    || metadata.entities.some(entity => typeof entity !== 'string' || !entity.trim())) {
+    errors.push('entities must be an array of non-empty strings');
+  }
+  if (!Number.isInteger(metadata.importance_score)
+    || metadata.importance_score < 1 || metadata.importance_score > 5) {
+    errors.push('importance_score must be an integer from 1 to 5');
   }
 
-  if (!VALID_CATEGORIES.includes(metadata.category)) {
-    metadata.category = 'Other';
-  }
-
-  if (!metadata.summary || typeof metadata.summary !== 'string' || metadata.summary.length < 5) {
-    metadata.summary = metadata.topic;
-  }
-
-  if (!Array.isArray(metadata.keywords)) {
-    // model returned a string like "word1 word2 word3" — split into array
-    if (typeof metadata.keywords === 'string' && metadata.keywords.trim()) {
-      metadata.keywords = metadata.keywords.split(/[\s,]+/).filter(Boolean);
-    } else {
-      metadata.keywords = metadata.topic ? [metadata.topic] : [];
-    }
-  }
-  if (metadata.keywords.length === 0) {
-    metadata.keywords = metadata.topic ? [metadata.topic] : [];
-  }
-
-  if (!Array.isArray(metadata.entities)) {
-    if (typeof metadata.entities === 'string' && metadata.entities.trim()) {
-      metadata.entities = metadata.entities.split(/[\s,]+/).filter(Boolean);
-    } else {
-      metadata.entities = [];
-    }
-  }
-
-  const score = Number(metadata.importance_score);
-  if (!score || score < 1 || score > 5) {
-    metadata.importance_score = 3;
-  } else {
-    metadata.importance_score = score;
-  }
-
-  return { valid: true, errors: [] };
+  return { valid: errors.length === 0, errors };
 }
 
 function parseJsonResponse(text) {
-  if (!text) throw new Error('Empty AI response');
+  if (typeof text !== 'string' || !text.trim()) throw new Error('Empty AI response');
 
-  // 1. Direct parse
+  const trimmed = text.trim();
   try { return JSON.parse(text.trim()); } catch (_) {}
 
-  // 2. Extract from code fence anywhere in the response
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  // Accept a single complete JSON code fence, not prose containing a fenced block.
+  const fenceMatch = trimmed.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
   if (fenceMatch) {
     try { return JSON.parse(fenceMatch[1].trim()); } catch (_) {}
-  }
-
-  // 3. Extract first {...} block
-  const braceStart = text.indexOf('{');
-  const braceEnd   = text.lastIndexOf('}');
-  if (braceStart !== -1 && braceEnd > braceStart) {
-    try { return JSON.parse(text.slice(braceStart, braceEnd + 1)); } catch (_) {}
   }
 
   throw new Error('Failed to parse AI JSON response');

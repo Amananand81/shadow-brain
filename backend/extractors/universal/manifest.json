@@ -28,9 +28,7 @@
     "https://shadow-brain-u4ua.onrender.com/*",
     "https://shadow-brain-4lux.vercel.app/*",
     "http://localhost/*",
-    "http://127.0.0.1/*",
-    "http://192.168.31.186/*",
-    "https://192.168.31.186/*"
+    "http://127.0.0.1/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -59,17 +57,6 @@
       "matches": [
         "http://localhost/*",
         "http://127.0.0.1/*",
-        "https://shadow-brain-4lux.vercel.app/*"
-      ],
-      "js": ["shadowbrain.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "http://localhost/*",
-        "http://127.0.0.1/*",
-        "http://192.168.31.186/*",
-        "https://192.168.31.186/*",
         "https://shadow-brain-4lux.vercel.app/*"
       ],
       "js": ["shadowbrain.js"],

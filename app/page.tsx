@@ -65,6 +65,15 @@ function apiConvToSession(conv: ApiConversation): ChatSession {
   };
 }
 
+function notifyExtensionLogin(token: string) {
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+  window.postMessage({
+    type: "SHADOWBRAIN_LOGIN",
+    token,
+    ...(backendUrl ? { backendUrl } : {}),
+  }, window.location.origin);
+}
+
 export default function Home() {
   const { getToken, isLoaded, isSignedIn, sessionId, signOut } = useAuth();
   const router = useRouter();
@@ -90,17 +99,28 @@ export default function Home() {
   const [resultsPanelContent, setResultsPanelContent] = useState<ReactNode>(null);
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [dashboardSessionId, setDashboardSessionId] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState(0);
 
   // Track which session IDs have already been saved to backend
   const persistedIds = useRef<Set<string>>(new Set());
+  const backendConversationIds = useRef<Set<string>>(new Set());
   const sessionExchanges = useRef(new Map<string, Promise<Awaited<ReturnType<typeof clerkLogin>>>>());
   const automaticExchangeAttempts = useRef(new Set<string>());
   const activeClerkSession = useRef<string | null>(null);
 
   const activateApplicationSession = useCallback(async (clerkToken: string, clerkSessionId: string) => {
     if (activeClerkSession.current === clerkSessionId) return;
+    if (activeClerkSession.current && activeClerkSession.current !== clerkSessionId) {
+      setSessions([]);
+      setActiveId("");
+      persistedIds.current.clear();
+      backendConversationIds.current.clear();
+      setToken(null);
+      setDashboardSessionId(null);
+      setAuth({ stage: "loading", userEmail: null, selectedAgents: [] });
+    }
     let exchange = sessionExchanges.current.get(clerkSessionId);
     if (!exchange) {
       exchange = clerkLogin(clerkToken, clerkSessionId);
@@ -111,6 +131,7 @@ export default function Home() {
       setSession(result.user.email, result.token);
       setToken(result.token);
       activeClerkSession.current = clerkSessionId;
+      setDashboardSessionId(clerkSessionId);
       setAuth({
         stage: "app",
         userEmail: result.user.email,
@@ -118,7 +139,7 @@ export default function Home() {
       });
       setSessionError(null);
       if (typeof window !== "undefined") {
-        window.postMessage({ type: "SHADOWBRAIN_LOGIN", token: result.token }, window.location.origin);
+        notifyExtensionLogin(result.token);
       }
       if (!hasSeenExtensionPrompt(result.user.email)) {
         markExtensionPromptSeen(result.user.email);
@@ -162,7 +183,12 @@ export default function Home() {
       queueMicrotask(() => {
         if (cancelled) return;
         clearSession();
+        setSessions([]);
+        setActiveId("");
+        persistedIds.current.clear();
+        backendConversationIds.current.clear();
         setToken(null);
+        setDashboardSessionId(null);
         setAuth({ stage: "auth", userEmail: null, selectedAgents: [] });
       });
       return () => { cancelled = true; };
@@ -176,9 +202,23 @@ export default function Home() {
     }).catch((error: unknown) => {
       if (cancelled) return;
       clearSession();
+      setSessions([]);
+      setActiveId("");
+      persistedIds.current.clear();
+      backendConversationIds.current.clear();
       setToken(null);
+      setDashboardSessionId(null);
       handleSessionExchangeError(error, true);
     });
+    if (activeClerkSession.current && activeClerkSession.current !== sessionId) {
+      setSessions([]);
+      setActiveId("");
+      persistedIds.current.clear();
+      backendConversationIds.current.clear();
+      setToken(null);
+      setDashboardSessionId(null);
+      setAuth({ stage: "loading", userEmail: null, selectedAgents: [] });
+    }
     return () => { cancelled = true; };
   }, [activateApplicationSession, getToken, handleSessionExchangeError, isLoaded, isSignedIn, sessionId]);
 
@@ -194,28 +234,59 @@ export default function Home() {
     if (stage === "auth") router.replace("/sign-in");
   }, [router, stage]);
 
-  // Load backend conversations once the user is in the app
+  // Refresh authenticated conversations so extension captures appear without
+  // a page reload, while retaining locally-created chat sessions.
   useEffect(() => {
-    if (stage !== "app") return;
-    startTransition(() => setSessionsLoading(true));
-    fetchConversations().then((convs) => {
-      if (convs.length) {
-        const backendSessions = convs.map(apiConvToSession);
-        backendSessions.forEach((s) => persistedIds.current.add(s.id));
-        setSessions((prev) => {
-          const existingIds = new Set(prev.map((s) => s.id));
-          const fresh = backendSessions.filter((s) => !existingIds.has(s.id));
-          return [...fresh, ...prev];
-        });
+    if (stage !== "app" || !token) return;
+    let cancelled = false;
+    let fetching = false;
+    let firstRefresh = true;
+    const refreshConversations = async () => {
+      if (fetching) return;
+      fetching = true;
+      if (firstRefresh) startTransition(() => setSessionsLoading(true));
+      try {
+        const conversations = await fetchConversations();
+        if (cancelled) return;
+        const backendSessions = conversations.map(apiConvToSession);
+        const previousBackendIds = backendConversationIds.current;
+        backendConversationIds.current = new Set(backendSessions.map((session) => session.id));
+        backendSessions.forEach((session) => persistedIds.current.add(session.id));
+        setSessions((previous) => [
+          ...backendSessions,
+          ...previous.filter((session) => !previousBackendIds.has(session.id)),
+        ]);
+      } catch {
+        if (!cancelled) console.warn("[conversations] Could not refresh saved conversations.");
+      } finally {
+        fetching = false;
+        if (firstRefresh) {
+          firstRefresh = false;
+          if (!cancelled) setSessionsLoading(false);
+        }
       }
-    }).finally(() => setSessionsLoading(false));
-  }, [stage]);
+    };
+
+    void refreshConversations();
+    const interval = window.setInterval(refreshConversations, 15000);
+    const refreshOnFocus = () => {
+      if (document.visibilityState === "visible") void refreshConversations();
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
+    };
+  }, [stage, token]);
 
   // Keep the universal extension paired even when the page or extension is
   // reloaded after the user has already signed in.
   useEffect(() => {
     if (typeof window === "undefined" || !token) return;
-    window.postMessage({ type: "SHADOWBRAIN_LOGIN", token }, window.location.origin);
+    notifyExtensionLogin(token);
   }, [token]);
 
   const handleAgentsSelected = useCallback((agents: string[]) => {
@@ -246,7 +317,12 @@ export default function Home() {
     activeClerkSession.current = null;
     clearSession();
     clearSelectedAgents();
+    setSessions([]);
+    setActiveId("");
+    persistedIds.current.clear();
+    backendConversationIds.current.clear();
     setToken(null);
+    setDashboardSessionId(null);
     setAuth({ stage: "auth", userEmail: null, selectedAgents: [] });
     if (typeof window !== "undefined") {
       window.postMessage({ type: "SHADOWBRAIN_LOGOUT" }, window.location.origin);
@@ -460,7 +536,8 @@ export default function Home() {
   const activeSession = sessions.find((s) => s.id === activeId);
 
   let content: React.ReactNode;
-  if (stage === "loading") {
+  if (stage === "loading" || !isLoaded || !isSignedIn || !sessionId
+    || (stage === "app" && dashboardSessionId !== sessionId)) {
     content = <div className="min-h-screen w-full" style={{ background: "var(--bg-deep)" }} />;
   } else if (stage === "auth") {
     content = <div className="min-h-screen w-full" style={{ background: "var(--bg-deep)" }} />;
@@ -565,6 +642,7 @@ export default function Home() {
         <div
           id="shadowbrain-auth-bridge"
           data-token={token}
+          data-backend-url={process.env.NEXT_PUBLIC_API_URL ?? ""}
           style={{ display: "none" }}
         />
       )}

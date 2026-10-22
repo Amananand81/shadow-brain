@@ -84,19 +84,17 @@ export async function sendChatMessage(
 }
 
 export async function fetchConversations(): Promise<ApiConversation[]> {
-  try {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('shadowbrain_token') : null;
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch(toApiUrl('/api/conversations?limit=1000'), {
-      headers
-    });
-    if (!res.ok) return [];
-    return res.json();
-  } catch {
-    return [];
+  const res = await fetch(toApiUrl('/api/conversations?limit=1000'), {
+    headers,
+  });
+  if (!res.ok) {
+    throw new Error(`Could not load conversations from the backend (HTTP ${res.status})`);
   }
+  return res.json();
 }
 
 export interface MemorySource {
